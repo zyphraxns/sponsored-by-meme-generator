@@ -100,4 +100,12 @@ export interface SceneState {
   labelEm?: Record<string, number>;
   /** logo 着色：brand = 保留原色 / 按背景挑明暗变体；mono = 统一前景色 */
   logoMode?: 'brand' | 'mono';
+  /**
+   * 官方字标前面再拼一个符号。
+   *
+   * 需要这个开关的原因：SVGL 的字标**不统一**——Gemini / Mistral 的字标自带符号，
+   * 而 OpenAI / GitHub 的字标只有文字（符号是单独的另一个文件）。无法靠宽高比或
+   * path 数可靠区分（实测 2.23/2.71/3.12 与 6/2/16 都无规律），所以交给用户决定。
+   */
+  logoWithSymbol?: boolean;
 }

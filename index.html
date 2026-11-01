@@ -307,7 +307,18 @@
         padding: 12px 18px;
         border-top: 1px solid var(--hairline);
       }
-      .icon-panel__actions { display: flex; gap: 8px; }
+      .icon-panel__actions { display: flex; gap: 8px; align-items: center; }
+      .icon-panel__check {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--ink-quiet);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .icon-panel__check input { margin: 0; cursor: pointer; }
+      .icon-panel__check:hover { color: var(--ink); }
       /* 已上传的 logo：缩略图 + 可编辑的文字标签 + 移除 */
       .icon-uploads {
         display: flex;
@@ -539,6 +550,10 @@
         <div class="icon-panel__footer">
           <span class="icon-panel__hint" id="icon-hint"></span>
           <div class="icon-panel__actions">
+            <label class="icon-panel__check">
+              <input type="checkbox" id="logo-with-symbol" />
+              <span id="logo-with-symbol-label">符号 + 字标</span>
+            </label>
             <button class="btn btn--secondary" type="button" id="icon-retry" hidden>重试</button>
             <input type="file" id="icon-upload" accept=".svg,image/png,image/jpeg,image/webp" multiple hidden />
             <button class="btn btn--secondary" type="button" id="icon-upload-btn">上传</button>

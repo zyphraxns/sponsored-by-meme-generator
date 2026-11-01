@@ -325,8 +325,11 @@ function slotWidth(item: TickerItem, logoH: number, state: SceneState): number {
     return logoW + labelWidth(item, logoH, state);
   }
   const aspect = state.logoAspect?.[key];
-  if (state.logoSvgs?.[key] !== undefined && aspect !== undefined) {
-    return logoH * aspect;
+  const hasWordmark = state.logoSvgs?.[key] !== undefined && aspect !== undefined;
+  if (hasWordmark) {
+    // 字标前拼符号时，符号单独占一个 logoH 的宽度
+    const symbolW = state.logoWithSymbol && state.iconSvgs?.[key] ? logoH + logoH * LABEL_GAP * 0.6 : 0;
+    return symbolW + logoH * aspect;
   }
   if (!item.label) return logoH;
   return logoH + labelWidth(item, logoH, state);
@@ -363,6 +366,16 @@ function renderLogoSlot(
 
   const logoSvg = state.logoSvgs?.[key];
   if (logoSvg) {
+    // 可选：字标前拼一个符号。
+    // SVGL 的字标不统一——Gemini / Mistral 自带符号，OpenAI / GitHub 只有文字。
+    const useSymbol = state.logoWithSymbol && state.iconSvgs?.[key] !== undefined;
+    if (useSymbol) {
+      const gap = logoH * LABEL_GAP * 0.6;
+      const symbolW = logoH + gap;
+      const logoW = Math.max(1, width - symbolW);
+      const symbol = renderIcon(key, x + logoH / 2, cy, logoH, state.iconSvgs, fg, false, scope);
+      return symbol + renderWordmark(logoSvg, x + symbolW, cy - logoH / 2, logoW, logoH, state.logoMode, fg, scope);
+    }
     return renderWordmark(logoSvg, x, cy - logoH / 2, width, logoH, state.logoMode, fg, scope);
   }
 

@@ -58,6 +58,8 @@ export interface UiStrings {
   iconNoResult: string;
   /** 上传项的文字标签占位提示 */
   uploadLabelPlaceholder: string;
+  /** 「符号 + 字标」开关 */
+  logoWithSymbolLabel: string;
   /** 图标面板关闭按钮 */
   iconPanelClose: string;
   /** 图标面板底部提示 */
@@ -128,6 +130,7 @@ export const UI: Record<Locale, UiStrings> = {
     iconPanelClear: 'Clear',
     uploadBtn: 'Upload',
     uploadLabelPlaceholder: 'Text next to it (optional)',
+    logoWithSymbolLabel: 'Symbol + wordmark',
     iconNoResult: 'No brand matches. Brand names are mostly English — or upload your own logo.',
     iconPanelClose: 'Close',
     iconPanelHint: 'Click to toggle. 3000+ brand marks from simple-icons, plus SVGL logotypes that keep their own colours.',
@@ -184,6 +187,7 @@ export const UI: Record<Locale, UiStrings> = {
     iconPanelClear: '清空',
     uploadBtn: '上传',
     uploadLabelPlaceholder: '图旁边的文字（可选）',
+    logoWithSymbolLabel: '符号 + 字标',
     iconNoResult: '没有匹配的品牌。品牌名多用英文，也可以直接上传自己的 logo。',
     iconPanelClose: '关闭',
     iconPanelHint: '点击切换选中状态。simple-icons 3000+ 品牌矢量；SVGL 的 logo 保留原品牌色。',

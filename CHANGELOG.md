@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **Optional symbol in front of a wordmark.** SVGL's wordmarks are inconsistent: Gemini and Mistral ship theirs with the symbol baked in, while OpenAI and GitHub ship text only (the symbol is a separate file). Width ratios and path counts don't separate the two cases reliably (2.23/2.71/3.12 and 6/2/16), so it can't be auto-detected — the icon panel now has a `Symbol + wordmark` switch. Turned on, OpenAI gets its flower back.
 - **Titles wrap before they shrink.** A long headline used to be squeezed onto one line until it hit the 8 px floor — on a 1080 canvas that is a grey smear. It now breaks into up to three lines and picks the largest size that fits.
 - **Undo after `Surprise me`.** The randomiser rewrites layout, palette, icons and copy in one click; a `Undo` button now sits next to it for 15 seconds.
 - **Drafts survive a reload.** The current selection is written to local storage (debounced) and restored on the next visit. A share link still wins over the draft.

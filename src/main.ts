@@ -38,6 +38,8 @@ interface Selection {
   rows?: number;
   /** 用户覆盖的速度倍率（有理数，保证 LCM 周期有限） */
   speed: number;
+  /** 官方字标前是否再拼一个符号（OpenAI / GitHub 的字标本身只有文字） */
+  logoWithSymbol: boolean;
 }
 
 let sel: Selection = {
@@ -48,6 +50,7 @@ let sel: Selection = {
   icons: [],
   text: {},
   palette: {},
+  logoWithSymbol: false,
   speed: 1,
 };
 let state: SceneState = createDefaultState(sel);
@@ -259,6 +262,9 @@ function refreshChrome(): void {
     if (el) el.textContent = text;
   }
 
+  const symLabel = document.getElementById('logo-with-symbol-label');
+  if (symLabel) symLabel.textContent = t.logoWithSymbolLabel;
+  if (logoWithSymbolInput) logoWithSymbolInput.checked = sel.logoWithSymbol;
   if (iconSearch) iconSearch.placeholder = t.iconPanelSearch;
   // 走 updatePanelNotice：加载失败时这里不能被"使用说明"覆盖掉
   updatePanelNotice();
@@ -436,6 +442,7 @@ const iconGrid = document.getElementById('icon-grid') as HTMLElement | null;
 const iconHint = document.getElementById('icon-hint') as HTMLElement | null;
 const iconClear = document.getElementById('icon-clear') as HTMLButtonElement | null;
 const iconUploads = document.getElementById('icon-uploads') as HTMLElement | null;
+const logoWithSymbolInput = document.getElementById('logo-with-symbol') as HTMLInputElement | null;
 const iconSelected = document.getElementById('icon-selected') as HTMLElement | null;
 const iconRetry = document.getElementById('icon-retry') as HTMLButtonElement | null;
 const titleInput = document.getElementById('title-input') as HTMLInputElement | null;
@@ -805,6 +812,13 @@ const uploadInput = document.getElementById('icon-upload') as HTMLInputElement |
 const uploadBtn = document.getElementById('icon-upload-btn') as HTMLButtonElement | null;
 
 uploadBtn?.addEventListener('click', () => uploadInput?.click());
+
+// 「符号 + 字标」：SVGL 的字标有的自带符号（Gemini/Mistral），有的只有文字
+// （OpenAI/GitHub），无法可靠自动判断，所以给用户手动切。
+logoWithSymbolInput?.addEventListener('change', () => {
+  apply({ logoWithSymbol: logoWithSymbolInput.checked });
+  renderIconGrid();
+});
 
 uploadInput?.addEventListener('change', () => {
   const files = [...(uploadInput.files ?? [])];

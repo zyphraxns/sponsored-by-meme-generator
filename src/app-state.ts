@@ -14,6 +14,8 @@ export interface DefaultStateOptions {
   palette?: SceneState['palette'];
   /** 用户覆盖的 ticker 行数 */
   rows?: number;
+  /** 官方字标前是否再拼一个符号；同上透传 */
+  logoWithSymbol?: boolean;
   /** 用户覆盖的速度倍率（须为有理数，保证 LCM 周期有限） */
   speed?: number;
 }
@@ -37,5 +39,6 @@ export function createDefaultState(options: DefaultStateOptions = {}): SceneStat
     speed: options.speed ?? 1,
     icons: options.icons ?? [],
     palette: options.palette ?? {},
+    logoWithSymbol: options.logoWithSymbol ?? false,
   };
 }
