@@ -31,7 +31,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "fonts:b64": "node -e \"const fs=require('fs');const f='src/assets/fonts/inter-latin-800-normal.woff2';fs.writeFileSync(f+'.b64',fs.readFileSync(f).toString('base64'))\"",
-    "fonts:slices": "node scripts/build-font-slices.mjs"
+    "fonts:slices": "node scripts/build-font-slices.mjs",
+    "og": "node scripts/build-og.mjs"
   },
   "devDependencies": {
     "@fontsource/inter": "^5.3.0",

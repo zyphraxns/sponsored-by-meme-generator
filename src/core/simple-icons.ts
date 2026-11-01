@@ -20,6 +20,7 @@
  *
  * ③ 兜底：CDN 全挂时用内置的 POPULAR 列表，保证面板永不空白。
  */
+import { aliasedBrandIds } from './brand-aliases';
 
 /** emoji 快捷面板 */export const EMOJI_PRESETS = [
   '💸', '🚀', '🫡', '💎', '🍕', '🎮', '🍔', '☕',
@@ -77,6 +78,8 @@ interface UnpkgMeta {
 
 let indexCache: string[] | null = null;
 let indexPromise: Promise<string[]> | null = null;
+/** 索引是否真的来自 CDN（false = 退回了内置 POPULAR 兜底，面板要提示"加载失败"） */
+let indexFromCdn = true;
 let titleMap: Map<string, string> | null = null;
 let metaPromise: Promise<Map<string, string>> | null = null;
 
@@ -147,10 +150,12 @@ async function loadIndex(): Promise<string[]> {
       // 热门品牌的展示名以 titleMap 为准；这里只决定顺序
       indexCache = slugs;
       titleMap = titles;
+      indexFromCdn = true;
       return indexCache;
     }
     // CDN 全挂：退回内置列表，功能不空白
     indexCache = POPULAR.map(([slug]) => slug);
+    indexFromCdn = false;
     return indexCache;
   })();
 
@@ -191,9 +196,21 @@ export function getIconSvg(slug: string): Promise<string> {
       if (!r.ok) throw new Error(`图标 ${slug} 加载失败（HTTP ${r.status}）`);
       return r.text();
     });
+    // 失败的不留在缓存里：否则「重试」会一直拿到同一个 rejected promise
+    task.catch(() => svgCache.delete(slug));
     svgCache.set(slug, task);
   }
   return task;
+}
+
+/**
+ * 清掉取图失败留下的缓存（重试按钮用）。
+ * 只清失败的：成功的图没必要重新下载，CDN 也不会凭空变好。
+ */
+export function forgetFailedIcons(): void {
+  for (const [slug, task] of [...svgCache]) {
+    task.catch(() => svgCache.delete(slug));
+  }
 }
 
 export function getIconName(slug: string): string {
@@ -249,6 +266,14 @@ export async function searchBrands(query: string): Promise<BrandHit[]> {
     const known = pool.filter((h) => popular.has(h.key));
     return known.length >= 24 ? known : pool.slice(0, 60);
   }
+
+  // 中文别名优先：品牌名是英文的，中文用户输「苹果」必须能命中 Apple
+  const aliasIds = aliasedBrandIds(q);
+  if (aliasIds.length > 0) {
+    const hits = pool.filter((h) => aliasIds.includes(h.key.split(':')[1] ?? ''));
+    if (hits.length > 0) return hits.slice(0, 60);
+  }
+
   const nq = q.replace(/[^a-z0-9]/g, '');
   return pool
     .filter((h) => {
@@ -261,4 +286,9 @@ export async function searchBrands(query: string): Promise<BrandHit[]> {
       return h.label.toLowerCase().replace(/[^a-z0-9]/g, '').includes(nq);
     })
     .slice(0, 60);
+}
+
+/** 索引是否退回了内置兜底（CDN 不可用）——面板据此显示"加载失败"而不是假装正常 */
+export function iconIndexIsFallback(): boolean {
+  return !indexFromCdn;
 }

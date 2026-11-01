@@ -146,24 +146,44 @@ export function deriveExportState(
 
 // —— 体积预估 ——
 //
-// 锚点：M3 实测 1080×1080 / 16fps（67 帧）/ 32 色 / iconScale 0.62 → 3576 KB。
-// 三个因子的数值都有实测依据（同一卡、同一内容、单变量）：
-//   · 32 色 → 16 色：3576 → 3073 KB（×0.859）
-//   · iconScale 0.62 → 0.45：3576 → 2811 KB（×0.786）
+// 锚点：2026-11-01 实测 1080×1080 / 16fps（67 帧）/ 32 色 / iconScale 0.62 /
+// 3 行默认 emoji → 4 152 364 B（旧锚点 3576 KB 是 M3 时代的卡，内容变过，
+// 预估一直偏低 12%）。
+// 其余因子都有实测依据（同一卡、单变量）：
+//   · 32 色 → 16 色：×0.859
+//   · iconScale 0.62 → 0.45：×0.786
 //   · 面积：1080² → 720² 时每帧从 53.4 KB 降到 27.9 KB，只有 0.52 倍而非
 //     面积比 0.44 倍——小画布「每像素」更贵（文字边缘在总像素里占比上升）。
-//     按两点拟合得指数 ≈0.80，故面积不按平方缩放。
-// 帧数近似线性（M3 三档测量支持）。仍有 ±15% 量级误差，故预估只作档位提示，
+//     两点拟合得指数 ≈0.80，故面积不按平方缩放。
+//   · 行数（2026-11-01 实测 1/3/5/8/12 行）：1→0.736、5→1.142、8→1.319、
+//     12→1.446（相对 3 行）。拟合 (rows/3)^0.264，四点误差均 <2%。
+//     旧模型完全不含行数，「拉满 12 行」和「1 行」预估一模一样。
+// 帧数近似线性（M3 三档测量支持）。仍有 ±10% 量级误差，故预估只作档位提示，
 // 超限与否最终以导出后的实际字节判定（见 exceedsLimit）。
 
-const GIF_ANCHOR = { px: 1080, frames: 67, colors: 32, iconScale: 0.62, bytes: 3576 * 1024 };
+const GIF_ANCHOR = {
+  px: 1080,
+  frames: 67,
+  colors: 32,
+  iconScale: 0.62,
+  rows: 3,
+  bytes: 4152364,
+};
 const COLOR_FACTOR_16 = 3073 / 3576;
 const ICON_FACTOR_045 = 2811 / 3576;
 /** 面积指数：由 1080² / 720² 两个实测点拟合（0.44 面积 → 0.52 体积） */
 const AREA_EXPONENT = 0.8;
+/** 行数指数：由 1/3/5/8/12 行五档实测拟合 */
+const ROWS_EXPONENT = 0.264;
 
 function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));
+}
+
+/** 行数因子：行越多，同样的帧里要挤压的内容越多，体积涨，但涨得很慢（幂 0.264） */
+export function rowsFactor(rows: number): number {
+  const safe = Number.isFinite(rows) && rows > 0 ? rows : GIF_ANCHOR.rows;
+  return (safe / GIF_ANCHOR.rows) ** ROWS_EXPONENT;
 }
 
 /** 调色板名额减少的收益（16→32 色之间线性；低于 16 色无实测，按下界钳住） */
@@ -193,6 +213,7 @@ export function estimateGifBytes(state: SceneState): number {
     GIF_ANCHOR.bytes *
       (frames / GIF_ANCHOR.frames) *
       area ** AREA_EXPONENT *
+      rowsFactor(state.rows) *
       colorFactor(state.template.export.gifMaxColors) *
       iconFactor(stateIconScale(state)),
   );

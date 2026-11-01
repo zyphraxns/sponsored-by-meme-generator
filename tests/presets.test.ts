@@ -89,11 +89,26 @@ describe('deriveExportState', () => {
 });
 
 describe('体积预估模型', () => {
-  it('锚点复现 M3 实测：默认卡 ≈ 3576 KB', () => {
+  it('锚点复现实测：默认卡 ≈ 4.0 MB（2026-11-01 实测 4 152 364 B）', () => {
     const bytes = estimateGifBytes(base);
-    expect(bytes / 1024).toBeCloseTo(3576, 0);
+    // 锚点即实测值，默认参数下预估应等同实测（±1%）
+    expect(Math.abs(bytes - 4152364) / 4152364).toBeLessThan(0.01);
     // 帧数与锚点一致（16fps / 4s → 67 帧）
     expect(frameCount(base.template.animation.fps, 4)).toBe(67);
+  });
+
+  it('行数因子：五档实测（1/3/5/8/12 行）误差 < 5%', () => {
+    const measured: [number, number][] = [
+      [1, 3054606],
+      [3, 4152364],
+      [5, 4742336],
+      [8, 5475831],
+      [12, 6004810],
+    ];
+    for (const [rows, actual] of measured) {
+      const est = estimateGifBytes({ ...base, rows });
+      expect(Math.abs(est - actual) / actual, `rows=${rows}`).toBeLessThan(0.05);
+    }
   });
 
   it('颜色因子：32 色 = 1，16 色 = 实测 -14%', () => {
@@ -121,9 +136,9 @@ describe('体积预估模型', () => {
     expect(ratio).toBeCloseTo(((720 * 720) / (1080 * 1080)) ** 0.8 * (50 / 67), 3);
   });
 
-  it('标定复核：720px / 12fps 预估贴近实测 1396 KB（误差 < 5%）', () => {
+  it('标定复核：720px / 12fps 预估贴近实测 1 611 508 B（误差 < 5%）', () => {
     const est = estimateGifBytes(deriveExportState(base, 'wechat', 'gif'));
-    const measured = 1396 * 1024;
+    const measured = 1611508;
     expect(Math.abs(est - measured) / measured).toBeLessThan(0.05);
   });
 

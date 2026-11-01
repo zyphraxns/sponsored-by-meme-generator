@@ -23,7 +23,11 @@ export type GifProgress = ExportProgress;
  * 已知代价：flush 前所有帧的 RGBA 同时驻留内存（1080² × 67 帧 ≈ 300 MB），
  * 桌面浏览器可接受；低分辨率档位留给 M5 平台预设（SPEC R3）。
  */
-export async function exportGif(state: SceneState, onProgress?: GifProgress): Promise<Blob> {
+export async function exportGif(
+  state: SceneState,
+  onProgress?: GifProgress,
+  signal?: AbortSignal,
+): Promise<Blob> {
   const { w, h } = canvasSize(state.template, state.ratio);
   const loop = loopSecondsFor(state);
   const fps = state.template.animation.fps;
@@ -53,6 +57,8 @@ export async function exportGif(state: SceneState, onProgress?: GifProgress): Pr
   const canvas = document.createElement('canvas');
 
   for (let i = 0; i < total; i++) {
+    // 取消：默认档 67 帧要跑 30 秒以上，没有退出口就是把用户锁在里面
+    if (signal?.aborted) throw new DOMException('export cancelled', 'AbortError');
     const svg = await svgForRaster(scene(enriched, frameTime(i, delayMs)), texts);
     // 首帧走带墨迹校验的路径：字体在 <img> 里异步解码，首帧可能空白；
     // 一旦首帧就位，后续帧共用同一字体缓存，直接栅格化即可。

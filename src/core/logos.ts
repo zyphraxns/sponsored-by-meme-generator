@@ -125,13 +125,30 @@ export function fetchLogo(url: string): Promise<string> {
         return r.text();
       })
       .finally(() => clearTimeout(tid));
+    // 失败不留缓存，否则「重试」永远拿到同一个 rejected promise
+    task.catch(() => svgCache.delete(target));
     svgCache.set(target, task);
   }
   return task;
 }
 
-/** 从 SVG 文本读 viewBox 宽高比（读不到返回 undefined，调用方回退到 1:1 估算） */
-export function svgAspect(svg: string): number | undefined {
+/**
+ * 重试用：丢掉失败的取图缓存，并允许重新拉一次 SVGL 元数据。
+ *
+ * 元数据那次失败会被永久缓存成空 Map（`assets = map`），不重置的话
+ * 网络恢复后字标也永远不会回来。
+ */
+export function resetLogoCache(): void {
+  for (const [url, task] of [...svgCache]) {
+    task.catch(() => svgCache.delete(url));
+  }
+  if (assets && assets.size === 0) {
+    assets = null;
+    loadPromise = null;
+  }
+}
+
+/** 从 SVG 文本读 viewBox 宽高比（读不到返回 undefined，调用方回退到 1:1 估算） */export function svgAspect(svg: string): number | undefined {
   const m = svg.match(/viewBox=["']\s*([-\d.]+)[\s,]+([-\d.]+)[\s,]+([-\d.]+)[\s,]+([-\d.]+)\s*["']/i);
   if (m) {
     const w = Number(m[3]);

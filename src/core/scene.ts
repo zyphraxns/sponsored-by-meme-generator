@@ -1,5 +1,5 @@
 import type { SceneState, Template, TextLayer, TickerLayer, TickerItem } from './types';
-import { fitFontSize } from './layout';
+import { fitTextLayout, LINE_HEIGHT_RATIO } from './layout';
 import { loopDuration, tickerPositions } from './ticker';
 import type { TickerSlot } from './ticker';
 import { isEmoji, isSimpleIcons, isSvglIcon, isUpload } from './simple-icons';
@@ -217,12 +217,26 @@ export function scene(state: SceneState, t: number): string {
 function renderText(layer: TextLayer, state: SceneState, w: number, h: number, fg: string): string {
   const text = state.text[layer.id]?.[state.locale] ?? layer.default[state.locale];
   const [bx, by, bw, bh] = layer.box;
-  const size = fitFontSize(text, bw * w, bh * h * 0.92);
+  const layout = fitTextLayout(text, bw * w, bh * h * 0.92);
   const cx = (bx + bw / 2) * w;
   const cy = (by + bh / 2) * h;
-  // 手算基线（不用 dominant-baseline）：导出 SVG 在任何查看器里表现一致
-  const baseline = cy + size * 0.35;
-  return `<text x="${f(cx)}" y="${f(baseline)}" font-family='${DISPLAY_FONT}' font-size="${f(size)}" font-weight="800" fill="${fg}" text-anchor="middle">${escapeXml(text)}</text>`;
+  const attrs =
+    `font-family='${DISPLAY_FONT}' font-size="${f(layout.fontSize)}" font-weight="800" fill="${fg}" text-anchor="middle"`;
+  // 单行：保持最朴素的 <text>（导出到任何查看器都一样）
+  if (layout.lines.length <= 1) {
+    // 手算基线（不用 dominant-baseline）：导出 SVG 在任何查看器里表现一致
+    return `<text x="${f(cx)}" y="${f(cy + layout.fontSize * 0.35)}" ${attrs}>${escapeXml(text)}</text>`;
+  }
+  // 多行：整块垂直居中，逐行 <tspan>。行高与字号同源，改字号不会错位。
+  const lh = layout.fontSize * LINE_HEIGHT_RATIO;
+  const top = cy - (layout.lines.length * lh) / 2;
+  const spans = layout.lines
+    .map(
+      (line, i) =>
+        `<tspan x="${f(cx)}" y="${f(top + (i + 0.5) * lh + layout.fontSize * 0.35)}">${escapeXml(line)}</tspan>`,
+    )
+    .join('');
+  return `<text ${attrs}>${spans}</text>`;
 }
 
 function renderTicker(

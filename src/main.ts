@@ -14,6 +14,8 @@ import { ui } from './i18n';
 import type { Locale, Ratio, SceneState, TickerItem } from './core/types';
 import type { BrandHit } from './core/simple-icons';
 import { encodeShare, decodeShare } from './share-link';
+import type { ShareableState } from './share-link';
+import { loadDraft, saveDraft } from './draft';
 import { exportGif, gifFilename } from './exporters/gif';
 import { exportPng } from './exporters/png';
 import { pngFilename, svgFilename, svgFileContent, svgToBlob } from './exporters/svg';
@@ -49,29 +51,57 @@ let sel: Selection = {
 };
 let state: SceneState = createDefaultState(sel);
 
-// 分享链接：如果 URL 有 #share 参数，解码并重建 sel/state
-(function initShare(): void {
+/** 启动时的状态来源：分享链接 > 本地草稿 > 默认。 */
+let restoredFromDraft = false;
+
+/**
+ * 把可恢复字段灌进 sel，并重建 state。
+ *
+ * 这里只做数据，不碰 DOM：本函数在模块顶部执行，此时下面那些
+ * `const titleInput = …` 还在 TDZ 里，任何 refreshChrome() 调用都会抛
+ * ReferenceError（旧代码靠一个空 catch 吞掉，表现为「分享链接无效」）。
+ * chrome 由模块末尾那次 refreshChrome() 统一刷新。
+ */
+function applyRestored(d: Partial<ShareableState>): void {
+  if (d.templateId) sel.templateId = d.templateId;
+  if (d.variantId) sel.variantId = d.variantId;
+  if (d.locale) sel.locale = d.locale;
+  if (d.ratio) sel.ratio = d.ratio;
+  if (d.platform) sel.platform = d.platform;
+  if (d.icons) sel.icons = d.icons;
+  if (d.text) sel.text = d.text;
+  if (d.palette) sel.palette = d.palette as NonNullable<SceneState['palette']>;
+  if (d.rows !== undefined) sel.rows = d.rows;
+  if (d.speed !== undefined) sel.speed = d.speed;
+  state = createDefaultState(sel);
+}
+
+// 分享链接：URL hash 优先；没有则尝试上次的本地草稿
+(function initState(): void {
   const encoded = location.hash.replace(/^#/, '');
-  if (!encoded) return;
-  const decoded = decodeShare('#' + encoded);
-  if (!decoded) return;
-  try {
-    if (decoded.templateId) sel.templateId = decoded.templateId;
-    if (decoded.variantId) sel.variantId = decoded.variantId;
-    if (decoded.locale) sel.locale = decoded.locale;
-    if (decoded.ratio) sel.ratio = decoded.ratio;
-    if (decoded.icons) sel.icons = decoded.icons;
-    if (decoded.text) sel.text = decoded.text;
-    if (decoded.palette) sel.palette = decoded.palette;
-    if (decoded.rows !== undefined) sel.rows = decoded.rows;
-    if (decoded.speed !== undefined) sel.speed = decoded.speed;
-    state = carryAssets(createDefaultState(sel), state);
-    refreshMeta();
-    refreshChrome();
-  } catch {
-    // 无效链接：静默忽略，留在默认状态
+  if (encoded) {
+    const decoded = decodeShare('#' + encoded);
+    if (decoded) {
+      applyRestored(decoded);
+      return;
+    }
+  }
+  const draft = loadDraft();
+  if (draft) {
+    applyRestored(draft);
+    restoredFromDraft = true;
   }
 })();
+
+/** 草稿写入去抖：滑块拖动会连续触发，别每个 input 都写一次 localStorage */
+let draftTimer: number | undefined;
+function scheduleDraftSave(): void {
+  if (draftTimer !== undefined) window.clearTimeout(draftTimer);
+  draftTimer = window.setTimeout(() => {
+    draftTimer = undefined;
+    saveDraft(sel);
+  }, 400);
+}
 
 let loopSeconds = loopSecondsFor(state);
 let start = performance.now();
@@ -168,7 +198,8 @@ function refreshMeta(): void {
       ratio: state.ratio,
       w: size.w,
       h: size.h,
-      loop: loopSeconds,
+      // 一位小数：速度是 0.05 步长的有理数，原始浮点会印出 3.522222222222222
+      loop: String(Math.round(loopSeconds * 10) / 10),
     });
   }
 
@@ -216,13 +247,20 @@ function refreshChrome(): void {
     ['icon-close', t.iconPanelClose],
     ['icon-clear', t.iconPanelClear],
     ['icon-upload-btn', t.uploadBtn],
+    ['icon-retry', t.retryLabel],
+    ['share-link', t.shareLabel],
+    ['random-btn', t.randomLabel],
+    ['undo-btn', t.undoLabel],
+    ['export-cancel', t.cancelLabel],
+    ['toolbar-toggle', t.settingsLabel],
   ] as const) {
     const el = document.getElementById(id);
     if (el) el.textContent = text;
   }
 
   if (iconSearch) iconSearch.placeholder = t.iconPanelSearch;
-  if (iconHint) iconHint.textContent = t.iconPanelHint;
+  // 走 updatePanelNotice：加载失败时这里不能被"使用说明"覆盖掉
+  updatePanelNotice();
   // 按钮本体也是 chrome：index.html 里的静态文字是中文，英文界面下会露出来
   const iconBtnEl = document.getElementById('icon-btn');
   if (iconBtnEl) {
@@ -261,6 +299,8 @@ function refreshChrome(): void {
   if (titleInput && titleLayer) {
     const defaultText = state.text[titleLayer.id]?.[state.locale] ?? titleLayer.default[state.locale];
     if (document.activeElement !== titleInput) titleInput.value = defaultText;
+    // 清空标题时画布会真的变成空白——placeholder 让用户看到"这里原本是什么"
+    titleInput.placeholder = titleLayer.default[state.locale];
   }
 
   refreshMeta();
@@ -332,6 +372,7 @@ function rebuildLive(partial: Partial<Selection>): void {
   loopSeconds = loopSecondsFor(state);
   if (reducedMotion) renderAt(0);
   refreshMeta();
+  scheduleDraftSave();
   // 背景色一变，字标的 light/dark 变体就得重新挑（深字标在深底上会消失）
   if (partial.palette) void hydrateIcons();
 }
@@ -347,6 +388,7 @@ function apply(partial: Partial<Selection>): void {
   if (reducedMotion) renderAt(0);
   refreshChrome();
   setStatus('');
+  scheduleDraftSave();
   void hydrateIcons(); // 品牌图标是异步 CDN 拉取，不阻塞首帧
 }
 
@@ -355,6 +397,7 @@ platformSelect?.addEventListener('change', () => {
   sel = { ...sel, platform: platformSelect.value as PlatformId };
   refreshMeta();
   setStatus('');
+  scheduleDraftSave();
 });
 
 templateSelect?.addEventListener('change', () => {
@@ -392,10 +435,14 @@ const iconGrid = document.getElementById('icon-grid') as HTMLElement | null;
 const iconHint = document.getElementById('icon-hint') as HTMLElement | null;
 const iconClear = document.getElementById('icon-clear') as HTMLButtonElement | null;
 const iconUploads = document.getElementById('icon-uploads') as HTMLElement | null;
+const iconSelected = document.getElementById('icon-selected') as HTMLElement | null;
+const iconRetry = document.getElementById('icon-retry') as HTMLButtonElement | null;
 const titleInput = document.getElementById('title-input') as HTMLInputElement | null;
 
 let iconSearchQuery = '';
 let iconIndexPromise: Promise<string[]> | null = null;
+/** 本轮网格里预览图拉失败的格子数（用于错误提示与重试按钮） */
+let previewFailures = 0;
 
 /** 打开面板：首次加载索引（simple-icons + SVGL 元数据），之后只渲染缓存结果 */
 async function openIconPanel(): Promise<void> {
@@ -451,11 +498,79 @@ async function brandPreviewSvg(hit: BrandHit): Promise<string | undefined> {
   });
 }
 
+/**
+ * 面板底部提示区：正常时是使用说明，有格子加载失败时换成错误态 + 重试。
+ *
+ * 断网 / CDN 不可达时（实测阻断后 92 格里 60 格空白）原来什么提示都没有，
+ * 用户无法判断是自己点坏了还是网站坏了。
+ */
+function updatePanelNotice(): void {
+  if (!iconHint) return;
+  const t = ui(state.locale);
+  if (previewFailures > 0) {
+    iconHint.textContent = t.panelLoadFailed(previewFailures);
+    iconHint.classList.add('is-warn');
+    if (iconRetry) iconRetry.hidden = false;
+    return;
+  }
+  iconHint.textContent = t.iconPanelHint;
+  iconHint.classList.remove('is-warn');
+  if (iconRetry) iconRetry.hidden = true;
+}
+
+/** 已选图标的清单：能核对顺序、能单独移除。选到第 9 个时光靠网格边框根本记不住。 */
+function renderSelected(): void {
+  if (!iconSelected) return;
+  const t = ui(state.locale);
+  iconSelected.replaceChildren();
+  if (sel.icons.length === 0) {
+    iconSelected.hidden = true;
+    return;
+  }
+  iconSelected.hidden = false;
+  const head = document.createElement('span');
+  head.className = 'icon-selected__label';
+  head.textContent = t.selectedCount(sel.icons.length);
+  iconSelected.appendChild(head);
+
+  sel.icons.forEach((item, idx) => {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    const name = document.createElement('span');
+    const text = chipLabel(item);
+    name.textContent = text;
+    chip.appendChild(name);
+    const kill = document.createElement('button');
+    kill.type = 'button';
+    kill.textContent = '×';
+    kill.title = t.removeLabel(text);
+    kill.setAttribute('aria-label', t.removeLabel(text));
+    kill.addEventListener('click', () => {
+      const next = sel.icons.filter((_, i) => i !== idx);
+      sel.icons = next;
+      apply({ icons: next });
+      renderIconGrid();
+    });
+    chip.appendChild(kill);
+    iconSelected.appendChild(chip);
+  });
+}
+
+/** 已选项的显示名：emoji 用字形本身，其余用品牌名或上传文件名 */
+function chipLabel(item: TickerItem): string {
+  if (item.icon.startsWith('emoji:')) return item.icon.slice('emoji:'.length);
+  if (item.label) return item.label;
+  if (item.icon.startsWith('upload:')) return item.icon.slice('upload:'.length);
+  return item.icon.split(':')[1] ?? item.icon;
+}
+
 async function renderIconGrid(): Promise<void> {
   if (!iconGrid) return;
   const t = ui(state.locale);
   iconGrid.replaceChildren();
-  if (iconHint) iconHint.textContent = t.iconPanelHint;
+  previewFailures = 0;
+  updatePanelNotice();
+  renderSelected();
   renderUploads();
   iconGrid.textContent = t.iconPanelLoading;
 
@@ -530,7 +645,13 @@ async function renderIconGrid(): Promise<void> {
       svg.style.height = '32px';
       cell.svg
         .then((text) => {
-          if (!text) return;
+          if (!text) {
+            // 拉不到就标红，别留一个空框让用户猜
+            btn.classList.add('is-failed');
+            previewFailures += 1;
+            updatePanelNotice();
+            return;
+          }
           const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
           // 视口必须用 SVG 自己的 viewBox：simple-icons 是 24×24，但 SVGL 的符号
           // 视口各异（如 256×222）。写死 24×24 会让后者只显示左上角一小块，
@@ -555,12 +676,14 @@ async function renderIconGrid(): Promise<void> {
 
     btn.addEventListener('click', () => {
       const idx = sel.icons.findIndex((i) => i.icon === cell.key);
-      if (idx >= 0) {
-        sel.icons.splice(idx, 1);
-      } else {
-        sel.icons.push({ icon: cell.key, label: cell.label || undefined });
-      }
-      apply({ icons: sel.icons });
+      // 不可变更新：sel.icons 可能与 state.icons 共用同一个数组引用，
+      // 就地 splice 会让「撤销快照」跟着一起变
+      const next =
+        idx >= 0
+          ? sel.icons.filter((_, i) => i !== idx)
+          : [...sel.icons, { icon: cell.key, label: cell.label || undefined }];
+      sel.icons = next;
+      apply({ icons: next });
       renderIconGrid();
     });
     iconGrid.appendChild(btn);
@@ -617,8 +740,9 @@ function renderUploads(): void {
     kill.textContent = '×';
     kill.title = t.iconPanelClear;
     kill.addEventListener('click', () => {
-      sel.icons = sel.icons.filter((i) => i.icon !== item.icon);
-      apply({ icons: sel.icons });
+      const next = sel.icons.filter((i) => i.icon !== item.icon);
+      sel.icons = next;
+      apply({ icons: next });
       renderIconGrid();
     });
     row.appendChild(kill);
@@ -644,6 +768,30 @@ iconClear?.addEventListener('click', () => {
   renderIconGrid();
 });
 
+// 重试：丢掉失败缓存后重新渲染一次网格。成功的图不重下（CDN 也不会凭空变好，
+// 但重下同一张图纯属浪费）。
+iconRetry?.addEventListener('click', () => {
+  void (async () => {
+    const [{ forgetFailedIcons }, { resetLogoCache }] = await Promise.all([
+      import('./core/simple-icons'),
+      import('./core/logos'),
+    ]);
+    forgetFailedIcons();
+    resetLogoCache();
+    previewFailures = 0;
+    await renderIconGrid();
+  })();
+});
+
+// —— 窄屏工具条 ——
+// 手机上九个控件要占 376px（屏高 45%），默认收起，让卡片回到主角位置。
+const toolbar = document.getElementById('toolbar');
+const toolbarToggle = document.getElementById('toolbar-toggle') as HTMLButtonElement | null;
+toolbarToggle?.addEventListener('click', () => {
+  const open = toolbar?.classList.toggle('is-open') ?? false;
+  toolbarToggle.setAttribute('aria-expanded', String(open));
+});
+
 // —— 上传 logo ——
 //
 // SVG 文件读文本（渲染走 renderFittedSvg，按 viewBox fit）；
@@ -659,8 +807,7 @@ uploadInput?.addEventListener('change', () => {
   const files = [...(uploadInput.files ?? [])];
   uploadInput.value = '';
   void (async () => {
-    for (const file of files) {
-      const key = `upload:${file.name}`;
+    for (const file of files) {      const key = `upload:${file.name}`;
       try {
         if (file.type.includes('svg') || file.name.toLowerCase().endsWith('.svg')) {
           state.iconSvgs = { ...(state.iconSvgs ?? {}), [key]: await file.text() };
@@ -681,8 +828,9 @@ uploadInput?.addEventListener('change', () => {
           });
           if (aspect) state.logoAspect = { ...(state.logoAspect ?? {}), [key]: aspect };
         }
-        // 默认用文件名（去扩展名）当文字标签，用户可在「已上传」列表里改
-        sel.icons.push({ icon: key, label: file.name.replace(/\.[^.]+$/, '') || undefined });
+        // 不默认填文字标签：多数人传的就是带品牌名的完整字标，再自动加一行
+        // 文件名（"acme.svg"）只会和图案里的 "ACME" 重复。需要时可在已上传列表里补。
+        sel.icons = [...sel.icons, { icon: key }];
       } catch {
         /* 单个文件失败跳过，不中断批量 */
       }
@@ -704,6 +852,7 @@ titleInput?.addEventListener('input', () => {
   const text = { ...sel.text, [layer.id]: { ...sel.text[layer.id], [state.locale]: value } };
   sel.text = text;
   state.text = text;
+  scheduleDraftSave();
 });
 
 // —— 行数 / 速度 / 色板 ——
@@ -782,6 +931,7 @@ speedRange?.addEventListener('input', () => {
 
 // —— 分享链接 ——
 function copyShareLink(): void {
+  const t = ui(state.locale);
   // 只序列化可恢复的部分（不含上传内容，见 share-link.ts 注释）
   const encoded = encodeShare(sel);
   const url = location.origin + location.pathname + '#' + encoded.replace(/^#/, '');
@@ -796,19 +946,67 @@ function copyShareLink(): void {
     document.execCommand('copy');
     document.body.removeChild(ta);
   });
-  setStatus('已复制分享链接');
-  // 1 秒后清状态（避免长期显示旧信息）
-  setTimeout(() => setStatus(''), 1500);
+  // 上传的 logo 进不了链接（内容不是可序列化的引用）。不告诉用户的话，
+  // 收链接的人会看到一张少了几个 logo、甚至退回默认 emoji 的卡。
+  const dropped = sel.icons.filter((i) => i.icon.startsWith('upload:')).length;
+  setStatus(dropped > 0 ? t.shareCopiedDropped(dropped) : t.shareCopied);
+  window.setTimeout(() => setStatus(''), dropped > 0 ? 3400 : 1500);
 }
 
 const shareBtn = document.getElementById('share-link') as HTMLButtonElement | null;
 shareBtn?.addEventListener('click', () => copyShareLink());
+
+// —— 随机 / 撤销 ——
+//
+// 随机是一次整体重写（版式、配色、图标、文案全换），没有撤销就是
+// 「手滑一下，五分钟白做」。快照只存 sel，资源（state.iconSvgs）由
+// carryAssets 透传，所以撤销回来的上传图不会丢。
+let undoSnapshot: Selection | null = null;
+let undoTimer: number | undefined;
+const undoBtn = document.getElementById('undo-btn') as HTMLButtonElement | null;
+
+function showUndo(visible: boolean): void {
+  if (undoBtn) undoBtn.hidden = !visible;
+}
+
+function pushUndoSnapshot(): void {
+  undoSnapshot = {
+    ...sel,
+    icons: [...sel.icons],
+    text: { ...sel.text },
+    palette: { ...sel.palette },
+  };
+  showUndo(true);
+  if (undoTimer !== undefined) window.clearTimeout(undoTimer);
+  undoTimer = window.setTimeout(() => {
+    undoTimer = undefined;
+    undoSnapshot = null;
+    showUndo(false);
+  }, 15000);
+}
+
 const randomBtn = document.getElementById('random-btn') as HTMLButtonElement | null;
 randomBtn?.addEventListener('click', () => {
-  import('./random-gen').then((m) => {
-    const r = m.randomOption(state.locale);
-    apply(r as Partial<Selection>);
-  }).catch(() => { /* ignore */ });
+  import('./random-gen')
+    .then((m) => {
+      const r = m.randomOption(state.locale);
+      pushUndoSnapshot();
+      apply(r as Partial<Selection>);
+      // apply() 会清状态行，所以提示要写在它后面
+      setStatus(ui(state.locale).randomApplied);
+    })
+    .catch(() => {
+      /* ignore */
+    });
+});
+
+undoBtn?.addEventListener('click', () => {
+  if (!undoSnapshot) return;
+  const snap = undoSnapshot;
+  undoSnapshot = null;
+  if (undoTimer !== undefined) window.clearTimeout(undoTimer);
+  showUndo(false);
+  apply({ ...snap });
 });
 
 // —— 导出 ——
@@ -816,6 +1014,7 @@ const gifBtn = document.getElementById('export-gif') as HTMLButtonElement | null
 const mp4Btn = document.getElementById('export-mp4') as HTMLButtonElement | null;
 const pngBtn = document.getElementById('export-png') as HTMLButtonElement | null;
 const svgBtn = document.getElementById('export-svg') as HTMLButtonElement | null;
+const cancelBtn = document.getElementById('export-cancel') as HTMLButtonElement | null;
 const status = document.getElementById('status');
 
 // WebCodecs 能力探测不 import mp4.ts（那会把 mediabunny 的 130KB gzip 拖进首屏）；
@@ -831,6 +1030,9 @@ function setBusy(busy: boolean): void {
   if (mp4Btn) mp4Btn.disabled = busy || !webCodecsOk;
   if (pngBtn) pngBtn.disabled = busy;
   if (svgBtn) svgBtn.disabled = busy;
+  // 导出期间这两颗按钮仍可点的话，画面会在中途被换掉，产物和结果对不上
+  if (shareBtn) shareBtn.disabled = busy;
+  if (randomBtn) randomBtn.disabled = busy;
 }
 
 function download(blob: Blob, filename: string): void {
@@ -861,17 +1063,39 @@ gifBtn?.addEventListener('click', async () => {
   const t = ui(state.locale);
   setBusy(true);
   setStatus(t.exporting('GIF'));
+  // 默认档 67 帧实测 30 秒以上：必须给退出口，否则用户只能等着
+  const controller = new AbortController();
+  if (cancelBtn) {
+    cancelBtn.hidden = false;
+    cancelBtn.onclick = () => controller.abort();
+  }
+  const startedAt = performance.now();
   try {
     // 平台预设在此生效：微信档导出 720px / 12fps，默认档保持模板参数
     const gifState = deriveExportState(state, sel.platform, 'gif');
-    const blob = await exportGif(gifState, (done, total) => {
-      setStatus(t.exporting('GIF', Math.round((done / total) * 100)));
-    });
+    const blob = await exportGif(
+      gifState,
+      (done, total) => {
+        const pct = Math.round((done / total) * 100);
+        const elapsed = (performance.now() - startedAt) / 1000;
+        const remain = done > 0 ? Math.max(1, Math.round((elapsed / done) * (total - done))) : 0;
+        setStatus(t.exportingEta('GIF', pct, remain));
+      },
+      controller.signal,
+    );
     download(blob, gifFilename(gifState));
     reportExported('GIF', blob.size, getPreset(sel.platform).gifLimitBytes);
   } catch (err) {
-    setStatus(t.failed(err instanceof Error ? err.message : String(err)));
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      setStatus(t.cancelled);
+    } else {
+      setStatus(t.failed(err instanceof Error ? err.message : String(err)));
+    }
   } finally {
+    if (cancelBtn) {
+      cancelBtn.hidden = true;
+      cancelBtn.onclick = null;
+    }
     setBusy(false);
   }
 });
@@ -923,3 +1147,11 @@ svgBtn?.addEventListener('click', async () => {
 });
 
 refreshChrome();
+
+// 启动时也要预取一次图标：分享链接 / 本地草稿里可能带着品牌图标，
+// 而 hydrateIcons 原本只在 apply() 里调用 → 打开链接看到的是一排纯文字，
+// 直到用户碰一下任何控件才补齐（表现为「图标加载不出来」）。
+void hydrateIcons();
+
+// 草稿恢复发生在模块顶部（DOM 引用还在 TDZ 里），提示要等这里才说得出
+if (restoredFromDraft) setStatus(ui(state.locale).draftRestored);

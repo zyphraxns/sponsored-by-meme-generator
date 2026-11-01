@@ -33,6 +33,9 @@ The interesting part is not the meme — it's that **the same rendering function
 - **Self-hosted fonts, on demand** — Latin text uses a bundled Inter slice; Chinese uses 97 `unicode-range` slices of Noto Sans SC, fetched and embedded only for the characters actually on screen. Exported PNGs/GIFs look the same on a machine that has never installed the font.
 - **Templates are data** — a layout is one JSON file; tonal variants are RFC 6902 JSON Patches applied to the same file. Adding a layout means adding a JSON file, not touching the renderer.
 - **Platform presets** — pick where you are posting and the export parameters adapt, with a size estimate against that platform's limit *before* you export.
+- **Real brand logotypes** — 3000+ single-colour marks from simple-icons plus 153 official wordmarks from SVGL, picked by background luminance so a dark card gets the light-on-dark variant. You can also upload your own SVG or bitmap.
+- **Share link and one-click random** — the whole selection fits in the URL hash, so a card can be shared or bookmarked; the randomiser rewrites layout, palette, icons and copy, and one undo puts it all back.
+- **Your work survives a reload** — the current selection is kept in local storage (share links win over the draft when both exist).
 - **Bilingual UI** (English / 简体中文) with per-locale card text.
 
 ## Quick start
@@ -58,10 +61,10 @@ Measured on the default layout, 1:1, 4-second loop, in headless Chrome (see `doc
 
 | Format | Settings | Result | Notes |
 | --- | --- | --- | --- |
-| **GIF** | 1080×1080 · 16 fps · 32 colours · Atkinson dithering | 3.6 MB · 67 frames | The format that actually loops everywhere. Palette is sampled from all frames, so there is no flicker between frames. |
-| GIF (WeChat preset) | 720×720 · 12 fps | 1.4 MB · 50 frames | WeChat may silently downgrade animations over ~1–2 MB, so this preset is deliberately small. |
-| **MP4** | 1080×1080 · 30 fps · H.264 | 1.25 MB · 120 frames | Encoded via WebCodecs in ~1.3 s. Keyframe interval equals the loop length, so a rewind does not stutter. |
-| **PNG** | native size | ~210 KB | Static frame, fonts embedded as data URIs. |
+| **GIF** | 1080×1080 · 16 fps · 32 colours · Atkinson dithering | 4.0 MB · 67 frames · ~30 s to encode | The format that actually loops everywhere. Palette is sampled from all frames, so there is no flicker between frames. Export can be cancelled mid-run. |
+| GIF (WeChat preset) | 720×720 · 12 fps | 1.5 MB · 50 frames | WeChat may silently downgrade animations over ~1–2 MB, so this preset is deliberately small. |
+| **MP4** | 1080×1080 · 30 fps · H.264 | 1.2 MB · 120 frames | Encoded via WebCodecs in ~2 s — an order of magnitude faster than the GIF path. Keyframe interval equals the loop length, so a rewind does not stutter. |
+| **PNG** | native size | ~250 KB | Static frame, fonts embedded as data URIs. |
 | **SVG** | native size | ~5 KB | Vector, fonts referenced from a CDN rather than embedded. |
 
 ## Platform presets
@@ -74,7 +77,7 @@ Measured on the default layout, 1:1, 4-second loop, in headless Chrome (see `doc
 | WeChat | 2 MB (practical) | Drops to 720×720 / 12 fps. |
 | Xiaohongshu | — | MP4 recommended; GIF support is unreliable. |
 
-Size estimates come from a model calibrated against real exports, not from guesswork — the estimate lands within a few percent of the measured file.
+Size estimates come from a model calibrated against real exports at 1, 3, 5, 8 and 12 rows — the estimate lands within a few percent of the measured file, so the "over limit" warning is trustworthy before you spend 30 seconds exporting.
 
 ## How it works
 

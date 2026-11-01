@@ -4,6 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>sponsored-by — 实时预览</title>
+    <meta
+      name="description"
+      content="Type a line, get a card where a fake sponsor scrolls across it. Renders and exports GIF / MP4 / PNG / SVG entirely in your browser — no server, no upload, no account."
+    />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="sponsored-by — fake sponsor card generator" />
+    <meta
+      property="og:description"
+      content="A parody &quot;SPONSORED BY&quot; card with brand logos scrolling underneath. Exports a looping GIF, MP4, PNG or SVG — all in your browser."
+    />
+    <meta property="og:image" content="https://zyphraxns.github.io/sponsored-by-meme-generator/og.png" />
+    <meta property="og:url" content="https://zyphraxns.github.io/sponsored-by-meme-generator/" />
+    <meta name="twitter:card" content="summary_large_image" />
     <style>
       :root {
         --surface: #ededea;
@@ -56,6 +70,20 @@
       /* flex: 0 0 auto —— 控件变多后 field 会被压缩，label 逐字折行、
          滑块撑满剩余宽度，整个工具栏会糊成一团 */
       .field { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+      /* 窄屏（手机）：工具条默认收起，卡片拿回屏幕。不收起时九个控件要占
+         376px，手机首屏 45% 被控件吃掉，卡片只剩 281px。 */
+      .toolbar__toggle {
+        display: none;
+        font: inherit;
+        font-size: 12px;
+        padding: 6px 12px;
+        border: 1px solid var(--hairline);
+        border-radius: 6px;
+        background: var(--surface-raised);
+        color: var(--ink);
+        cursor: pointer;
+      }
+      .toolbar__toggle[aria-expanded="true"] { background: var(--ink); color: var(--surface-raised); }
       .field-label {
         font-size: 11px;
         letter-spacing: 0.08em;
@@ -137,27 +165,58 @@
       .actions {
         display: flex;
         align-items: center;
-        gap: 12px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
       }
       .status {
         font-size: 12px;
         color: var(--ink-quiet);
+        margin-right: 4px;
       }
       .btn {
         font: inherit;
         font-size: 13px;
         padding: 8px 16px;
-        border: none;
+        border: 1px solid transparent;
         border-radius: 6px;
         background: var(--ink);
         color: var(--surface);
         cursor: pointer;
-        transition: background 120ms ease;
+        /* 0 0 auto + nowrap：六个按钮挤在一行时会被压到 45px 宽，
+           文字逐字竖排并被裁掉（手机上传送门直接消失） */
+        flex: 0 0 auto;
+        white-space: nowrap;
+        transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
       }
       .btn:hover { background: #000000; }
       .btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
       .btn:disabled { opacity: 0.45; cursor: default; }
       .btn:disabled:hover { background: var(--ink); }
+      /* 主次分离：GIF 是绝大多数人的出口，其余导出降为描边次要按钮 */
+      .btn--secondary {
+        background: transparent;
+        border-color: var(--hairline);
+        color: var(--ink);
+      }
+      .btn--secondary:hover { background: var(--surface-raised); border-color: var(--ink); }
+      .btn--secondary:disabled:hover { background: transparent; border-color: var(--hairline); }
+      .btn--ghost {
+        background: transparent;
+        border-color: transparent;
+        color: var(--ink-quiet);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        padding: 8px 4px;
+      }
+      .btn--ghost:hover { background: transparent; color: var(--ink); }
+      .repo-link {
+        font-size: 12px;
+        color: var(--ink-quiet);
+        text-decoration: none;
+        width: fit-content;
+      }
+      .repo-link:hover { color: var(--ink); text-decoration: underline; }
       @keyframes settle {
         from { opacity: 0; transform: scale(0.97) translateY(6px); }
         to { opacity: 1; transform: none; }
@@ -295,6 +354,7 @@
       }
       .icon-upload-row .kill:hover { color: var(--ink); }
       .icon-panel__hint { font-size: 11px; color: var(--ink-quiet); }
+      .icon-panel__hint.is-warn { color: var(--warn); }
       .icon-cell svg path { fill: var(--ink); }
       .title-input {
         font: inherit;
@@ -344,12 +404,79 @@
         cursor: pointer;
       }
       .swatch.is-custom { border-color: var(--ink); }
+
+      /* —— 已选图标条 ——
+         选到第 9 个时用户已经记不清顺序，也没有任何地方能核对。 */
+      .icon-selected {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        padding: 10px 18px;
+        border-bottom: 1px solid var(--hairline);
+        background: var(--surface);
+      }
+      .icon-selected[hidden] { display: none; }
+      .icon-selected__label {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ink-quiet);
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 180px;
+        font-size: 12px;
+        padding: 3px 4px 3px 10px;
+        border: 1px solid var(--hairline);
+        border-radius: 999px;
+        background: var(--surface-raised);
+      }
+      .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .chip button {
+        border: none;
+        background: transparent;
+        color: var(--ink-quiet);
+        font: inherit;
+        font-size: 14px;
+        line-height: 1;
+        cursor: pointer;
+        padding: 2px 5px;
+      }
+      .chip button:hover { color: var(--ink); }
+      /* 预览图拉不回来的格子：给出可见的失败态，而不是留白让用户以为网站坏了 */
+      .icon-cell.is-failed { border-color: var(--warn); color: var(--warn); }
+
+      /* —— 窄屏 ——
+         390 宽实测：工具条 376px 高（屏高 45%），卡片只剩 281px，
+         页脚六个按钮挤成一行、文字竖排被裁。 */
+      @media (max-width: 780px) {
+        .toolbar { padding: 10px 4vmin; align-items: center; }
+        .toolbar__toggle { display: inline-flex; }
+        .controls { display: none; width: 100%; gap: 12px 16px; }
+        .toolbar.is-open .controls { display: flex; }
+        .stage { width: min(92vw, 960px); }
+        main { padding: 2.4vmin 4vmin; }
+        footer { align-items: flex-start; }
+        .actions { width: 100%; justify-content: flex-start; }
+      }
     </style>
   </head>
   <body>
-    <header class="toolbar">
+    <header class="toolbar" id="toolbar">
       <span class="brand">sponsored-by</span>
-      <div class="controls">
+      <button
+        class="toolbar__toggle"
+        type="button"
+        id="toolbar-toggle"
+        aria-expanded="false"
+        aria-controls="controls"
+      >
+        设置
+      </button>
+      <div class="controls" id="controls">
         <label class="field">
           <span class="field-label" id="label-platform">发到</span>
           <select class="select" id="platform-select"></select>
@@ -405,14 +532,16 @@
           <button class="btn" type="button" id="icon-close">关闭</button>
         </div>
         <input class="icon-search" id="icon-search" type="search" placeholder="搜索品牌…" autocomplete="off" />
+        <div class="icon-selected" id="icon-selected" hidden></div>
         <div class="icon-uploads" id="icon-uploads" hidden></div>
         <div class="icon-grid" id="icon-grid" role="listbox"></div>
         <div class="icon-panel__footer">
           <span class="icon-panel__hint" id="icon-hint"></span>
           <div class="icon-panel__actions">
+            <button class="btn btn--secondary" type="button" id="icon-retry" hidden>重试</button>
             <input type="file" id="icon-upload" accept=".svg,image/png,image/jpeg,image/webp" multiple hidden />
-            <button class="btn" type="button" id="icon-upload-btn">上传</button>
-            <button class="btn" type="button" id="icon-clear">清空</button>
+            <button class="btn btn--secondary" type="button" id="icon-upload-btn">上传</button>
+            <button class="btn btn--secondary" type="button" id="icon-clear">清空</button>
           </div>
         </div>
       </div>
@@ -423,15 +552,24 @@
         <span class="caption" id="caption"></span>
         <span class="caption" id="preset-note"></span>
         <span class="caption" id="estimate"></span>
+        <a
+          class="repo-link"
+          href="https://github.com/zyphraxns/sponsored-by-meme-generator"
+          target="_blank"
+          rel="noopener noreferrer"
+          >GitHub ↗</a
+        >
       </div>
       <div class="actions">
         <span class="status" id="status" role="status" aria-live="polite"></span>
+        <button class="btn btn--ghost" id="undo-btn" type="button" hidden>撤销</button>
+        <button class="btn btn--ghost" id="export-cancel" type="button" hidden>取消</button>
         <button class="btn" id="export-gif" type="button">导出 GIF</button>
-        <button class="btn" id="export-mp4" type="button">导出 MP4</button>
-        <button class="btn" id="export-png" type="button">导出 PNG</button>
-        <button class="btn" id="export-svg" type="button">导出 SVG</button>
-        <button class="btn" id="share-link" type="button" title="复制当前状态的分享链接">复制链接</button>
-        <button class="btn" id="random-btn" type="button" title="随机生成》送我惊喜">随机</button>
+        <button class="btn btn--secondary" id="export-mp4" type="button">导出 MP4</button>
+        <button class="btn btn--secondary" id="export-png" type="button">导出 PNG</button>
+        <button class="btn btn--secondary" id="export-svg" type="button">导出 SVG</button>
+        <button class="btn btn--secondary" id="share-link" type="button" title="复制当前状态的分享链接">复制链接</button>
+        <button class="btn btn--secondary" id="random-btn" type="button" title="随机生成一个版式">随机</button>
       </div>
     </footer>
     <script type="module" src="/src/main.ts"></script>
