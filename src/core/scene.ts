@@ -3,6 +3,7 @@ import { fitTextLayout, LINE_HEIGHT_RATIO } from './layout';
 import { loopDuration, tickerPositions } from './ticker';
 import type { TickerSlot } from './ticker';
 import { isEmoji, isSimpleIcons, isSvglIcon, isUpload } from './simple-icons';
+import { isMonochromeSvg, scopeSvgIds } from './svg-ids';
 
 /**
  * 预览期字体栈（system font stack 秒开，不等字体加载；导出字体策略见 SPEC 3.2）。
@@ -284,7 +285,9 @@ function renderTicker(
     );
     body.push(`<g clip-path="url(#${clipId})">`);
     for (const p of tickerPositions(slots, gap, boxW, rowPhase, t, rowSpeed, loop)) {
-      const cell = renderLogoSlot(p.item, boxX + p.x, cy, logoH, p.width, state, fg);
+      // 每个实例一个 id 前缀：同一 logo 一行里会重复出现，id 撞了 mask/clip 就错乱
+      const scope = `${layer.id}-${i}-${Math.round(p.x)}`;
+      const cell = renderLogoSlot(p.item, boxX + p.x, cy, logoH, p.width, state, fg, scope);
       if (cell) body.push(cell);
     }
     body.push('</g>');
@@ -338,6 +341,7 @@ function renderLogoSlot(
   width: number,
   state: SceneState,
   fg: string,
+  scope: string,
 ): string {
   const key = item.icon;
   if (isEmoji(key)) {
@@ -353,16 +357,25 @@ function renderLogoSlot(
     const logoW = width - labelWidth(item, logoH, state);
     const logo = content.startsWith('data:')
       ? `<image href="${escapeXml(content)}" x="${f(x)}" y="${f(cy - logoH / 2)}" width="${f(logoW)}" height="${f(logoH)}" preserveAspectRatio="xMidYMid meet"/>`
-      : renderFittedSvg(content, x + logoW / 2, cy, Math.min(logoH, logoW), fg, false);
+      : renderFittedSvg(content, x + logoW / 2, cy, Math.min(logoH, logoW), fg, false, scope);
     return logo + (item.label ? renderLabel(item.label, x + logoW, cy, logoH, fg) : '');
   }
 
   const logoSvg = state.logoSvgs?.[key];
   if (logoSvg) {
-    return renderWordmark(logoSvg, x, cy - logoH / 2, width, logoH, state.logoMode, fg);
+    return renderWordmark(logoSvg, x, cy - logoH / 2, width, logoH, state.logoMode, fg, scope);
   }
 
-  const symbol = renderIcon(key, x + logoH / 2, cy, logoH, state.iconSvgs, fg);
+  const symbol = renderIcon(
+    key,
+    x + logoH / 2,
+    cy,
+    logoH,
+    state.iconSvgs,
+    fg,
+    state.logoMode === 'mono',
+    scope,
+  );
   if (!item.label) return symbol;
   return symbol + renderLabel(item.label, x + logoH, cy, logoH, fg);
 }
@@ -376,13 +389,14 @@ function renderWordmark(
   height: number,
   mode: SceneState['logoMode'],
   fg: string,
+  scope: string,
 ): string {
   const wrapped = svg.match(/<svg\b[^>]*>([\s\S]*)<\/svg>/i);
   const inner0 = wrapped?.[1];
   if (!inner0) return '';
   const viewBox = svg.match(/viewBox=["']([^"']+)["']/i)?.[1] ?? `0 0 ${width} ${height}`;
   // brand 模式保留原填充（多数是黑/白双色设计，单色化会把镂空填死、logo 变形）
-  const inner = mode === 'mono' ? forceFill(inner0, fg) : inner0;
+  const inner = scopeSvgIds(mode === 'mono' ? forceFill(inner0, fg) : inner0, scope);
   return `<svg x="${f(x)}" y="${f(y)}" width="${f(width)}" height="${f(height)}" viewBox="${viewBox}" preserveAspectRatio="xMidYMid meet">${inner}</svg>`;
 }
 
@@ -405,6 +419,7 @@ function renderFittedSvg(
   size: number,
   fg: string,
   mono = true,
+  scope = '',
 ): string {
   const vb = svg.match(/viewBox=["']\s*([-\d.]+)[\s,]+([-\d.]+)[\s,]+([-\d.]+)[\s,]+([-\d.]+)\s*["']/i);
   const wrapped = svg.match(/<svg\b[^>]*>([\s\S]*)<\/svg>/i);
@@ -415,9 +430,11 @@ function renderFittedSvg(
   const vh = Number(vb[4]);
   if (!(vw > 0 && vh > 0)) return '';
   const s = size / Math.max(vw, vh);
-  // mono=true 用于图标源（SVGL 符号，与 simple-icons 一致的单色约束）；
-  // 用户上传的 logo 不染色——那是人家设计好的成品，染了就毁。
-  const inner = mono ? forceFill(wrapped[1] ?? '', fg) : wrapped[1] ?? '';
+  // mono 只对**真正的单色标**成立（见 svg-ids.ts）：多色 / 带白色挖空 / 带渐变
+  // 的 logo 必须原样渲染，否则内层细节会被一起填成前景色，整块变成实心色块。
+  // 用户上传的 logo 一律不染色——那是人家设计好的成品。
+  const raw = mono ? forceFill(wrapped[1] ?? '', fg) : wrapped[1] ?? '';
+  const inner = scope ? scopeSvgIds(raw, scope) : raw;
   return `<g transform="translate(${f(cx - (vx + vw / 2) * s)},${f(cy - (vy + vh / 2) * s)}) scale(${f(s)})">${inner}</g>`;
 }
 
@@ -439,6 +456,8 @@ function renderIcon(
   size: number,
   iconSvgs?: Record<string, string>,
   fg = '#ffffff',
+  forceMono = false,
+  scope = '',
 ): string {
   if (isEmoji(icon)) {
     const glyph = icon.slice('emoji:'.length);
@@ -453,7 +472,8 @@ function renderIcon(
     return renderSimpleIconsSvg(svg, cx, cy, size, fg);
   }
   if (isSvglIcon(icon)) {
-    return renderFittedSvg(svg, cx, cy, size, fg);
+    // 单色标染成前景色（换背景也看得见）；多色标保持原样，否则会被填实
+    return renderFittedSvg(svg, cx, cy, size, fg, forceMono || isMonochromeSvg(svg), scope);
   }
   return '';
 }

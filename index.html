@@ -293,7 +293,10 @@
         color: var(--ink-quiet);
       }
       .icon-cell.is-upload:hover { color: var(--ink); border-color: var(--ink); }
-      .icon-cell svg { width: 32px; height: 32px; }
+      /* 不给 path 加 fill：SVGL 的 logo 大量是「色块 + 白色挖空」，
+         强行统一填充会把内层细节一起涂黑，整块变成实心方块。
+         只提供 color，让用 currentColor 的单色标有正确颜色。 */
+      .icon-cell svg { width: 32px; height: 32px; color: var(--ink); }
       .icon-cell[aria-pressed="true"] { border-color: var(--ink); background: #fff; }
       .icon-cell .emoji { font-size: 28px; line-height: 1; }
       .icon-panel__footer {
@@ -328,8 +331,7 @@
         overflow: hidden;
       }
       .icon-upload-row .thumb img,
-      .icon-upload-row .thumb svg { width: 26px; height: 26px; object-fit: contain; }
-      .icon-upload-row .thumb svg path { fill: var(--ink); }
+      .icon-upload-row .thumb svg { width: 26px; height: 26px; object-fit: contain; color: var(--ink); }
       .icon-upload-row input[type="text"] {
         flex: 1 1 auto;
         min-width: 0;
@@ -355,7 +357,6 @@
       .icon-upload-row .kill:hover { color: var(--ink); }
       .icon-panel__hint { font-size: 11px; color: var(--ink-quiet); }
       .icon-panel__hint.is-warn { color: var(--warn); }
-      .icon-cell svg path { fill: var(--ink); }
       .title-input {
         font: inherit;
         font-size: 13px;

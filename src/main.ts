@@ -16,6 +16,7 @@ import type { BrandHit } from './core/simple-icons';
 import { encodeShare, decodeShare } from './share-link';
 import type { ShareableState } from './share-link';
 import { loadDraft, saveDraft } from './draft';
+import { scopeSvgIds } from './core/svg-ids';
 import { exportGif, gifFilename } from './exporters/gif';
 import { exportPng } from './exporters/png';
 import { pngFilename, svgFilename, svgFileContent, svgToBlob } from './exporters/svg';
@@ -658,9 +659,11 @@ async function renderIconGrid(): Promise<void> {
           // 看起来就是一个黑方块。
           const vb = doc.documentElement.getAttribute('viewBox');
           if (vb) svg.setAttribute('viewBox', vb);
-          // 整段内联而不是只取第一个 path：SVGL 的符号是多 path + clipPath 的组合，
-          // 只取第一个会把 logo 缺一半。上色交给 CSS（.icon-cell svg path）。
-          svg.innerHTML = doc.documentElement.innerHTML;
+          // 整段内联而不是只取第一个 path：SVGL 的符号是多 path + clipPath/mask
+          // 的组合，只取第一个会把 logo 缺一半。颜色一律用文件自带值（见 index.html
+          // 的注释）；id 必须加前缀，否则 90 个 logo 共享一个文档时
+          // url(#a) 会指到别人的定义上。
+          svg.innerHTML = scopeSvgIds(doc.documentElement.innerHTML, cell.key);
         })
         .catch(() => {});
       visual.appendChild(svg);
@@ -720,7 +723,7 @@ function renderUploads(): void {
       const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       const vb = doc.documentElement.getAttribute('viewBox');
       s.setAttribute('viewBox', vb ?? '0 0 24 24');
-      s.innerHTML = doc.documentElement.innerHTML;
+      s.innerHTML = scopeSvgIds(doc.documentElement.innerHTML, item.icon);
       thumb.appendChild(s);
     }
     row.appendChild(thumb);
