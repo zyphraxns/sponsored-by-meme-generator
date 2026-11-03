@@ -71,6 +71,14 @@ export interface Template {
   export: { formats: string[]; gifMaxColors: number; dither: string };
 }
 
+/** SVG 内容的实际墨迹包围盒（原始 viewBox 坐标） */
+export interface SvgInkBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface SceneState {
   template: Template;
   locale: Locale;
@@ -93,6 +101,14 @@ export interface SceneState {
   logoSvgs?: Record<string, string>;
   /** 字标宽高比（key = icon 字符串），布局算宽度用 */
   logoAspect?: Record<string, number>;
+  /**
+   * 字标的**实际墨迹**包围盒（viewBox 坐标，key = icon 字符串）。
+   *
+   * SVGL 的字标 viewBox 自带留白（OpenAI 的墨迹只占盒高 42%），只按 viewBox
+   * 等比缩放会让不同品牌高矮差一倍。由调用方在浏览器里量好注入，scene() 用它
+   * 裁掉留白并按视觉高度归一。
+   */
+  logoInk?: Record<string, SvgInkBox>;
   /**
    * 品牌名在 1em 字号下的宽度（key = icon 字符串）。
    * scene() 不能调用 canvas.measureText，故由调用方量好注入。

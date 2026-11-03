@@ -1,9 +1,10 @@
-import type { SceneState, Template, TextLayer, TickerLayer, TickerItem } from './types';
+import type { SceneState, SvgInkBox, Template, TextLayer, TickerLayer, TickerItem } from './types';
 import { fitTextLayout, LINE_HEIGHT_RATIO } from './layout';
 import { loopDuration, tickerPositions } from './ticker';
 import type { TickerSlot } from './ticker';
 import { isEmoji, isSimpleIcons, isSvglIcon, isUpload } from './simple-icons';
 import { isMonochromeSvg, scopeSvgIds } from './svg-ids';
+import { measureSvgInk } from './svg-ink';
 
 /**
  * 预览期字体栈（system font stack 秒开，不等字体加载；导出字体策略见 SPEC 3.2）。
@@ -21,10 +22,26 @@ const BASE_LOOP_SECONDS = 4;
 /** ticker 图标默认缩放（相对行高）；可被模板 iconScale 覆盖 */
 export const DEFAULT_ICON_SCALE = 0.62;
 
-/** 品牌名文字高度相对 logo 视觉高度的比例 */
-const LABEL_SCALE = 0.62;
-/** 符号与品牌名之间的间距（相对 logo 视觉高度） */
+/**
+ * 品牌 logo 的**视觉高度**（实际墨迹）相对 logoH 的比例。
+ *
+ * 原实现直接拿 logoH 当高度：官方字标填满 116，文字兜底只有 0.62×116，
+ * OpenAI 的 viewBox 留白又让墨迹只剩 42% —— 同一行高矮差 2.38 倍。
+ * 现在官方字标、符号、文字兜底都归一到这个视觉高度；0.78 让 ticker 略低于
+ * 大标题的 cap height（114.59 × 0.727 ≈ 83），保住标题的主次。
+ */
+const LOGO_OPTICAL_RATIO = 0.78;
+/** Inter 的 cap height / font-size；文字兜底按它换算字号 */
+const CAP_RATIO = 0.727;
+/** 文字兜底字号相对 logoH 的比例（视觉高度 ÷ cap 比例） */
+const LABEL_FONT_SCALE = LOGO_OPTICAL_RATIO / CAP_RATIO;
+/** 符号与品牌名之间的间距（相对视觉高度） */
 const LABEL_GAP = 0.28;
+
+/** 一个 logo 的视觉高度（实际墨迹要占多高） */
+function opticalHeight(logoH: number): number {
+  return logoH * LOGO_OPTICAL_RATIO;
+}
 
 const XML_ESCAPES: Record<string, string> = {
   '&': '&amp;',
@@ -125,11 +142,16 @@ export async function sceneIconSvgs(state: SceneState): Promise<Record<string, s
 export async function sceneLogoSvgs(
   state: SceneState,
   bg: string,
-): Promise<{ svgs: Record<string, string>; aspect: Record<string, number> }> {
+): Promise<{
+  svgs: Record<string, string>;
+  aspect: Record<string, number>;
+  ink: Record<string, SvgInkBox>;
+}> {
   const items = collectLogoItems(state);
   const svgs: Record<string, string> = {};
   const aspect: Record<string, number> = {};
-  if (items.length === 0) return { svgs, aspect };
+  const ink: Record<string, SvgInkBox> = {};
+  if (items.length === 0) return { svgs, aspect, ink };
 
   const { loadSvglAssets, getLogoAsset, pickVariant, fetchLogo, svgAspect, isDarkColor } = await import('./logos');
   await loadSvglAssets();
@@ -145,12 +167,15 @@ export async function sceneLogoSvgs(
         svgs[key] = text;
         const a = svgAspect(text);
         if (a) aspect[key] = a;
+        // 墨迹包围盒：裁掉 viewBox 留白，并给布局一个真实的宽高比
+        const box = measureSvgInk(text);
+        if (box) ink[key] = box;
       } catch {
         /* 单个失败 → 回退符号+文字 */
       }
     }),
   );
-  return { svgs, aspect };
+  return { svgs, aspect, ink };
 }
 
 /** 场景内所有「非 emoji 且有品牌名」的单元（去重，key = icon 字符串） */
@@ -259,7 +284,10 @@ function renderTicker(
   const rowSlot = boxH / rows;
   // 视觉高度基准：图标、字标、符号+文字都以它为准，整墙才是齐的
   const logoH = rowSlot * (layer.iconScale ?? DEFAULT_ICON_SCALE);
-  const gap = logoH * layer.gap;
+  // 品牌 logo 归一后间距也按视觉高度算，否则缝会比 logo 还大；
+  // 纯 emoji 卡保持原来的间距，避免默认卡的 GIF 体积与预估标定被打偏。
+  const allEmoji = items.every((item) => isEmoji(item.icon));
+  const gap = (allEmoji ? logoH : opticalHeight(logoH)) * layer.gap;
 
   // 单元宽度只依赖 logoH 与已注入的度量 → 纯函数
   const slots: TickerSlot[] = items.map((item) => ({
@@ -303,36 +331,45 @@ function renderTicker(
 function labelWidth(item: TickerItem, logoH: number, state: SceneState): number {
   if (!item.label) return 0;
   const em = state.labelEm?.[item.icon] ?? item.label.length * 0.58;
-  return logoH * LABEL_GAP + logoH * LABEL_SCALE * em;
+  return opticalHeight(logoH) * LABEL_GAP + logoH * LABEL_FONT_SCALE * em;
 }
 
 /** 品牌名文字（与标题同一套字体与手算基线，保证导出跨查看器一致） */
 function renderLabel(label: string, startX: number, cy: number, logoH: number, fg: string): string {
-  const fontSize = logoH * LABEL_SCALE;
-  const textX = startX + logoH * LABEL_GAP;
-  const baseline = cy + fontSize * 0.34;
+  // 字号按 cap height 反推：让文字兜底的视觉高度和官方字标一致
+  const fontSize = logoH * LABEL_FONT_SCALE;
+  const opticalH = opticalHeight(logoH);
+  const textX = startX + opticalH * LABEL_GAP;
+  // baseline 落在 cap 底部 → cap 的视觉中心与 cy 对齐
+  const baseline = cy + opticalH / 2;
   return `<text x="${f(textX)}" y="${f(baseline)}" font-family='${DISPLAY_FONT}' font-size="${f(fontSize)}" font-weight="700" fill="${fg}" text-anchor="start">${escapeXml(label)}</text>`;
 }
 
 function slotWidth(item: TickerItem, logoH: number, state: SceneState): number {
   const key = item.icon;
+  // emoji 保持原来的字号：默认卡就是 emoji 三行，不动它的观感
   if (isEmoji(key)) return logoH;
+  const opticalH = opticalHeight(logoH);
   // 用户上传：位图按原始宽高比给宽度（上限 4，防极端长图挤爆一行），
   // 若配了自定义文字还要再加上文字宽度
   if (isUpload(key)) {
     const a = state.logoAspect?.[key];
-    const logoW = a ? logoH * Math.min(a, 4) : logoH;
+    const logoW = a ? opticalH * Math.min(a, 4) : opticalH;
     return logoW + labelWidth(item, logoH, state);
   }
-  const aspect = state.logoAspect?.[key];
+  // 官方字标：优先用墨迹宽高比（裁掉 viewBox 留白），没有测量时退回 viewBox
+  const ink = state.logoInk?.[key];
+  const aspect = ink ? ink.w / ink.h : state.logoAspect?.[key];
   const hasWordmark = state.logoSvgs?.[key] !== undefined && aspect !== undefined;
   if (hasWordmark) {
-    // 字标前拼符号时，符号单独占一个 logoH 的宽度
-    const symbolW = state.logoWithSymbol && state.iconSvgs?.[key] ? logoH + logoH * LABEL_GAP * 0.6 : 0;
-    return symbolW + logoH * aspect;
+    // 字标前拼符号时，符号单独占一个视觉宽度的位置
+    const symbolW = state.logoWithSymbol && state.iconSvgs?.[key]
+      ? opticalH + opticalH * LABEL_GAP * 0.6
+      : 0;
+    return symbolW + opticalH * (aspect ?? 1);
   }
-  if (!item.label) return logoH;
-  return logoH + labelWidth(item, logoH, state);
+  if (!item.label) return opticalH;
+  return opticalH + labelWidth(item, logoH, state);
 }
 
 /** 渲染一个 logo 单元：官方字标 → 优先；否则符号（+ 程序排版品牌名） */
@@ -351,6 +388,8 @@ function renderLogoSlot(
     return renderIcon(key, x + logoH / 2, cy, logoH, state.iconSvgs, fg);
   }
 
+  const opticalH = opticalHeight(logoH);
+
   // 用户上传：内容已在 iconSvgs（SVG 文本或位图 dataURL）。
   // 位图用 <image> + meet 保比例铺满 logo 区；SVG 文本按 viewBox fit。
   // 之后可以跟自定义文字（用户给上传的图配名字）。
@@ -359,58 +398,74 @@ function renderLogoSlot(
     if (!content) return '';
     const logoW = width - labelWidth(item, logoH, state);
     const logo = content.startsWith('data:')
-      ? `<image href="${escapeXml(content)}" x="${f(x)}" y="${f(cy - logoH / 2)}" width="${f(logoW)}" height="${f(logoH)}" preserveAspectRatio="xMidYMid meet"/>`
-      : renderFittedSvg(content, x + logoW / 2, cy, Math.min(logoH, logoW), fg, false, scope);
+      ? `<image href="${escapeXml(content)}" x="${f(x)}" y="${f(cy - opticalH / 2)}" width="${f(logoW)}" height="${f(opticalH)}" preserveAspectRatio="xMidYMid meet"/>`
+      : renderFittedSvg(
+          content,
+          x + logoW / 2,
+          cy,
+          // 按高度归一：宽字标用槽宽当长边，高/方标用视觉高度当长边
+          Math.max(opticalH, logoW),
+          fg,
+          false,
+          scope,
+          state.logoInk?.[key],
+        );
     return logo + (item.label ? renderLabel(item.label, x + logoW, cy, logoH, fg) : '');
   }
 
   const logoSvg = state.logoSvgs?.[key];
-  if (logoSvg) {
+  const ink = state.logoInk?.[key];
+  if (logoSvg && (ink || state.logoAspect?.[key] !== undefined)) {
     // 可选：字标前拼一个符号。
     // SVGL 的字标不统一——Gemini / Mistral 自带符号，OpenAI / GitHub 只有文字。
     const useSymbol = state.logoWithSymbol && state.iconSvgs?.[key] !== undefined;
     if (useSymbol) {
-      const gap = logoH * LABEL_GAP * 0.6;
-      const symbolW = logoH + gap;
+      const gap = opticalH * LABEL_GAP * 0.6;
+      const symbolW = opticalH + gap;
       const logoW = Math.max(1, width - symbolW);
-      const symbol = renderIcon(key, x + logoH / 2, cy, logoH, state.iconSvgs, fg, false, scope);
-      return symbol + renderWordmark(logoSvg, x + symbolW, cy - logoH / 2, logoW, logoH, state.logoMode, fg, scope);
+      const symbol = renderIcon(key, x + opticalH / 2, cy, opticalH, state.iconSvgs, fg, false, scope);
+      return symbol + renderWordmark(logoSvg, x + symbolW, cy, logoW, opticalH, state.logoMode, fg, scope, ink);
     }
-    return renderWordmark(logoSvg, x, cy - logoH / 2, width, logoH, state.logoMode, fg, scope);
+    return renderWordmark(logoSvg, x, cy, width, opticalH, state.logoMode, fg, scope, ink);
   }
 
   const symbol = renderIcon(
     key,
-    x + logoH / 2,
+    x + opticalH / 2,
     cy,
-    logoH,
+    opticalH,
     state.iconSvgs,
     fg,
     state.logoMode === 'mono',
     scope,
   );
   if (!item.label) return symbol;
-  return symbol + renderLabel(item.label, x + logoH, cy, logoH, fg);
+  return symbol + renderLabel(item.label, x + opticalH, cy, logoH, fg);
 }
 
 /** 内联官方字标：剥掉原 <svg> 外壳，按目标尺寸重包一层 */
 function renderWordmark(
   svg: string,
   x: number,
-  y: number,
+  cy: number,
   width: number,
   height: number,
   mode: SceneState['logoMode'],
   fg: string,
   scope: string,
+  ink?: SvgInkBox,
 ): string {
   const wrapped = svg.match(/<svg\b[^>]*>([\s\S]*)<\/svg>/i);
   const inner0 = wrapped?.[1];
   if (!inner0) return '';
-  const viewBox = svg.match(/viewBox=["']([^"']+)["']/i)?.[1] ?? `0 0 ${width} ${height}`;
+  const vb = svg.match(/viewBox=["']([^"']+)["']/i)?.[1];
+  // 有墨迹盒就裁到墨迹盒：viewBox 留白不会被算进视觉高度
+  const viewBox = ink ? `${f(ink.x)} ${f(ink.y)} ${f(ink.w)} ${f(ink.h)}` : vb ?? `0 0 ${width} ${height}`;
+  const aspect = ink ? ink.w / ink.h : width / height;
+  const renderW = Math.max(1, height * aspect);
   // brand 模式保留原填充（多数是黑/白双色设计，单色化会把镂空填死、logo 变形）
   const inner = scopeSvgIds(mode === 'mono' ? forceFill(inner0, fg) : inner0, scope);
-  return `<svg x="${f(x)}" y="${f(y)}" width="${f(width)}" height="${f(height)}" viewBox="${viewBox}" preserveAspectRatio="xMidYMid meet">${inner}</svg>`;
+  return `<svg x="${f(x)}" y="${f(cy - height / 2)}" width="${f(renderW)}" height="${f(height)}" viewBox="${viewBox}" preserveAspectRatio="xMidYMid meet">${inner}</svg>`;
 }
 
 /** mono 模式：把内部实色填充改成前景色（fill="none" 必须保留，否则镂空消失） */
@@ -433,14 +488,16 @@ function renderFittedSvg(
   fg: string,
   mono = true,
   scope = '',
+  ink?: SvgInkBox,
 ): string {
-  const vb = svg.match(/viewBox=["']\s*([-\d.]+)[\s,]+([-\d.]+)[\s,]+([-\d.]+)[\s,]+([-\d.]+)\s*["']/i);
   const wrapped = svg.match(/<svg\b[^>]*>([\s\S]*)<\/svg>/i);
-  if (!vb || !wrapped) return '';
-  const vx = Number(vb[1]);
-  const vy = Number(vb[2]);
-  const vw = Number(vb[3]);
-  const vh = Number(vb[4]);
+  if (!wrapped) return '';
+  const vb = svg.match(/viewBox=["']\s*([-\d.]+)[\s,]+([-\d.]+)[\s,]+([-\d.]+)[\s,]+([-\d.]+)\s*["']/i);
+  if (!ink && !vb) return '';
+  const vx = ink ? ink.x : Number(vb?.[1]);
+  const vy = ink ? ink.y : Number(vb?.[2]);
+  const vw = ink ? ink.w : Number(vb?.[3]);
+  const vh = ink ? ink.h : Number(vb?.[4]);
   if (!(vw > 0 && vh > 0)) return '';
   const s = size / Math.max(vw, vh);
   // mono 只对**真正的单色标**成立（见 svg-ids.ts）：多色 / 带白色挖空 / 带渐变

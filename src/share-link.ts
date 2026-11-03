@@ -23,6 +23,7 @@ export interface ShareStateCompact {
   pal?: { bg?: string; fg?: string };
   rows?: number;
   s?: number; // speed
+  sym?: boolean; // logoWithSymbol
 }
 
 export function encodeShare(options: ShareableState): string {
@@ -58,6 +59,8 @@ export function encodeShare(options: ShareableState): string {
   }
   if (options.rows !== undefined) c.rows = options.rows;
   if (options.speed !== undefined) c.s = options.speed;
+  // 只在开启时写：旧链接的默认值就是 false，不必占字节
+  if (options.logoWithSymbol) c.sym = true;
   return '#' + encodeURIComponent(JSON.stringify(c));
 }
 
@@ -105,6 +108,7 @@ export function decodeShare(hash: string): Partial<ShareableState> | null {
     if (c.pal) out.palette = { bg: c.pal.bg, fg: c.pal.fg };
     if (c.rows !== undefined) out.rows = c.rows;
     if (c.s !== undefined) out.speed = c.s;
+    if (c.sym) out.logoWithSymbol = true;
     return out;
   } catch {
     return null;

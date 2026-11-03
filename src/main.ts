@@ -17,6 +17,7 @@ import { encodeShare, decodeShare } from './share-link';
 import type { ShareableState } from './share-link';
 import { loadDraft, saveDraft } from './draft';
 import { scopeSvgIds } from './core/svg-ids';
+import { measureSvgInk } from './core/svg-ink';
 import { exportGif, gifFilename } from './exporters/gif';
 import { exportPng } from './exporters/png';
 import { pngFilename, svgFilename, svgFileContent, svgToBlob } from './exporters/svg';
@@ -57,6 +58,10 @@ let state: SceneState = createDefaultState(sel);
 
 /** 启动时的状态来源：分享链接 > 本地草稿 > 默认。 */
 let restoredFromDraft = false;
+/** 本次从草稿里恢复了几个上传 logo（用于提示「恢复了什么」） */
+let restoredUploadCount = 0;
+/** 「上传图太大、刷新后不保留」只提示一次，避免每次编辑都刷状态行 */
+let warnedTooLarge = false;
 
 /**
  * 把可恢复字段灌进 sel，并重建 state。
@@ -77,6 +82,7 @@ function applyRestored(d: Partial<ShareableState>): void {
   if (d.palette) sel.palette = d.palette as NonNullable<SceneState['palette']>;
   if (d.rows !== undefined) sel.rows = d.rows;
   if (d.speed !== undefined) sel.speed = d.speed;
+  if (d.logoWithSymbol !== undefined) sel.logoWithSymbol = d.logoWithSymbol;
   state = createDefaultState(sel);
 }
 
@@ -92,7 +98,30 @@ function applyRestored(d: Partial<ShareableState>): void {
   }
   const draft = loadDraft();
   if (draft) {
-    applyRestored(draft);
+    // 草稿里的 icons 含 upload: 项；decodeShare 为了分享会过滤它们，这里补回来
+    applyRestored({
+      ...draft.state,
+      ...(draft.icons ? { icons: draft.icons } : {}),
+    });
+    if (draft.uploads) {
+      state.iconSvgs = { ...(state.iconSvgs ?? {}), ...draft.uploads };
+      if (draft.aspects) {
+        state.logoAspect = { ...(state.logoAspect ?? {}), ...draft.aspects };
+      }
+      if (draft.ink) {
+        state.logoInk = { ...(state.logoInk ?? {}), ...draft.ink };
+      }
+      // 旧草稿没存尺寸：SVG 上传图就地重量一次；位图没有 aspect 只能按方形
+      for (const [key, content] of Object.entries(draft.uploads)) {
+        if (content.startsWith('data:') || state.logoInk?.[key]) continue;
+        const ink = measureSvgInk(content);
+        if (ink) {
+          state.logoInk = { ...(state.logoInk ?? {}), [key]: ink };
+          state.logoAspect = { ...(state.logoAspect ?? {}), [key]: ink.w / ink.h };
+        }
+      }
+      restoredUploadCount = Object.keys(draft.uploads).length;
+    }
     restoredFromDraft = true;
   }
 })();
@@ -103,7 +132,11 @@ function scheduleDraftSave(): void {
   if (draftTimer !== undefined) window.clearTimeout(draftTimer);
   draftTimer = window.setTimeout(() => {
     draftTimer = undefined;
-    saveDraft(sel);
+    const result = saveDraft(sel, state.iconSvgs, state.logoAspect, state.logoInk);
+    if (!result.uploadsSaved && !warnedTooLarge) {
+      warnedTooLarge = true;
+      flashStatus(ui(state.locale).uploadTooLarge, 4000);
+    }
   }, 400);
 }
 
@@ -257,10 +290,17 @@ function refreshChrome(): void {
     ['undo-btn', t.undoLabel],
     ['export-cancel', t.cancelLabel],
     ['toolbar-toggle', t.settingsLabel],
+    ['toolbar-edit', t.editTitleLabel],
+    ['stage-hint-text', t.stageHint],
+    ['brand-demo', t.brandDemo],
   ] as const) {
     const el = document.getElementById(id);
     if (el) el.textContent = text;
   }
+
+  const hintDismissEl = document.getElementById('hint-dismiss');
+  if (hintDismissEl) hintDismissEl.setAttribute('aria-label', t.dismissHint);
+  stage.title = t.stageHint;
 
   const symLabel = document.getElementById('logo-with-symbol-label');
   if (symLabel) symLabel.textContent = t.logoWithSymbolLabel;
@@ -332,18 +372,26 @@ async function hydrateIcons(): Promise<void> {
   const darkBg = isDarkColor(bg);
   // 背景明暗翻转时（白底 ↔ 深底）必须换变体，否则深字标在深底上直接消失。
   if (lastDarkBg !== null && lastDarkBg !== darkBg) {
+    // 背景明暗翻转只需重挑品牌字标的 light/dark 变体；
+    // 上传图的墨迹盒/宽高比与背景无关，清掉会让它缩回正方形。
     state.logoSvgs = {};
-    state.logoAspect = {};
+    state.logoAspect = Object.fromEntries(
+      Object.entries(state.logoAspect ?? {}).filter(([key]) => key.startsWith('upload:')),
+    );
+    state.logoInk = Object.fromEntries(
+      Object.entries(state.logoInk ?? {}).filter(([key]) => key.startsWith('upload:')),
+    );
   }
   lastDarkBg = darkBg;
   // 符号：sceneIconSvgs 会保留已有内容（上传的 SVG / dataURL）并补齐
   // simple-icons 与 svgl: 的缺口（含按背景挑明暗变体）。
   state.iconSvgs = await sceneIconSvgs(state);
   // 官方完整字标：有则替代「符号 + 文字」。
-  const { svgs, aspect } = await sceneLogoSvgs(state, bg);
+  const { svgs, aspect, ink } = await sceneLogoSvgs(state, bg);
   if (Object.keys(svgs).length > 0) {
     state.logoSvgs = { ...(state.logoSvgs ?? {}), ...svgs };
     state.logoAspect = { ...(state.logoAspect ?? {}), ...aspect };
+    state.logoInk = { ...(state.logoInk ?? {}), ...ink };
   }
 }
 
@@ -360,6 +408,7 @@ function carryAssets(next: SceneState, prev: SceneState): SceneState {
     iconSvgs: prev.iconSvgs,
     logoSvgs: prev.logoSvgs,
     logoAspect: prev.logoAspect,
+    logoInk: prev.logoInk,
     labelEm: prev.labelEm,
   };
 }
@@ -460,6 +509,12 @@ async function openIconPanel(): Promise<void> {
   titleInput?.blur();
   iconSearch?.focus();
   await renderIconGrid();
+}
+
+/** 关闭面板并把焦点还给触发它的按钮（Esc / Close / 点遮罩都走这里） */
+function closeIconPanel(): void {
+  if (iconPanel) iconPanel.hidden = true;
+  iconBtn?.focus();
 }
 
 async function loadIconIndex(): Promise<string[]> {
@@ -762,20 +817,29 @@ function renderUploads(): void {
 }
 
 iconBtn?.addEventListener('click', () => openIconPanel());
-iconClose?.addEventListener('click', () => {
-  if (iconPanel) iconPanel.hidden = true;
-});
+iconClose?.addEventListener('click', closeIconPanel);
 iconPanel?.addEventListener('click', (e) => {
-  if (e.target === iconPanel && iconPanel) iconPanel.hidden = true;
+  if (e.target === iconPanel) closeIconPanel();
+});
+// 视觉上是模态框，键盘用户按 Esc 应该能关；不拦截的话只能去右上角找 Close
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && iconPanel && !iconPanel.hidden) {
+    e.preventDefault();
+    closeIconPanel();
+  }
 });
 iconSearch?.addEventListener('input', () => {
   iconSearchQuery = iconSearch.value.trim();
   renderIconGrid();
 });
 iconClear?.addEventListener('click', () => {
+  if (sel.icons.length === 0) return;
+  // 清空是破坏性动作：给一次撤销快照，别让 9 个品牌一键消失
+  pushUndoSnapshot();
   sel.icons = [];
-  apply({ icons: sel.icons });
+  apply({ icons: [] });
   renderIconGrid();
+  flashStatus(ui(state.locale).iconsCleared, 2500);
 });
 
 // 重试：丢掉失败缓存后重新渲染一次网格。成功的图不重下（CDN 也不会凭空变好，
@@ -802,6 +866,76 @@ toolbarToggle?.addEventListener('click', () => {
   toolbarToggle.setAttribute('aria-expanded', String(open));
 });
 
+// —— 第一分钟 ——
+//
+// 第一次打开的人不知道「这句台词」在哪改：卡片占屏 34%，标题输入框只有
+// 168×30 缩在工具栏最右。这里做三件事：点卡片直接聚焦标题、手机给一个直达
+// 标题的按钮、首屏只显示一次的提示 + 一键品牌示例。
+const stageHint = document.getElementById('stage-hint');
+const brandDemoBtn = document.getElementById('brand-demo') as HTMLButtonElement | null;
+const hintDismiss = document.getElementById('hint-dismiss') as HTMLButtonElement | null;
+const toolbarEdit = document.getElementById('toolbar-edit') as HTMLButtonElement | null;
+
+const ONBOARD_KEY = 'sponsored-by:onboarded:v1';
+function hasOnboarded(): boolean {
+  try {
+    return localStorage.getItem(ONBOARD_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+function markOnboarded(): void {
+  try {
+    localStorage.setItem(ONBOARD_KEY, '1');
+  } catch {
+    /* 隐私模式下写不进去：提示每次出现，不阻塞主流程 */
+  }
+}
+function dismissHint(): void {
+  if (stageHint) stageHint.hidden = true;
+  markOnboarded();
+}
+function openToolbar(): void {
+  if (!toolbar || !toolbarToggle) return;
+  if (!toolbar.classList.contains('is-open')) {
+    toolbar.classList.add('is-open');
+    toolbarToggle.setAttribute('aria-expanded', 'true');
+  }
+}
+function focusTitle(): void {
+  titleInput?.focus();
+  titleInput?.select();
+  dismissHint();
+}
+
+/** 与 README / demo 对齐的一组品牌；点一下就能看到「品牌版」长什么样 */
+const DEMO_ICONS: TickerItem[] = [
+  { icon: 'simple-icons:github', label: 'GitHub' },
+  { icon: 'simple-icons:vercel', label: 'Vercel' },
+  { icon: 'simple-icons:google', label: 'Google' },
+  { icon: 'simple-icons:spotify', label: 'Spotify' },
+  { icon: 'simple-icons:nvidia', label: 'NVIDIA' },
+  { icon: 'simple-icons:tailwindcss', label: 'Tailwind CSS' },
+  { icon: 'simple-icons:tesla', label: 'Tesla' },
+  { icon: 'simple-icons:nike', label: 'Nike' },
+  { icon: 'simple-icons:figma', label: 'Figma' },
+];
+
+toolbarEdit?.addEventListener('click', () => {
+  openToolbar();
+  focusTitle();
+});
+stage.addEventListener('click', () => {
+  if (window.matchMedia('(max-width: 780px)').matches) openToolbar();
+  focusTitle();
+});
+brandDemoBtn?.addEventListener('click', () => {
+  apply({ icons: DEMO_ICONS.map((icon) => ({ ...icon })) });
+  flashStatus(ui(state.locale).brandDemoApplied, 2500);
+  dismissHint();
+});
+hintDismiss?.addEventListener('click', dismissHint);
+
 // —— 上传 logo ——
 //
 // SVG 文件读文本（渲染走 renderFittedSvg，按 viewBox fit）；
@@ -823,11 +957,21 @@ logoWithSymbolInput?.addEventListener('change', () => {
 uploadInput?.addEventListener('change', () => {
   const files = [...(uploadInput.files ?? [])];
   uploadInput.value = '';
+  // 新上传可能换掉了上一次的超限原因，重新给一次提示机会
+  warnedTooLarge = false;
   void (async () => {
     for (const file of files) {      const key = `upload:${file.name}`;
       try {
         if (file.type.includes('svg') || file.name.toLowerCase().endsWith('.svg')) {
-          state.iconSvgs = { ...(state.iconSvgs ?? {}), [key]: await file.text() };
+          const text = await file.text();
+          state.iconSvgs = { ...(state.iconSvgs ?? {}), [key]: text };
+          // 按墨迹盒量一次：自带留白的上传图也能按视觉高度对齐；
+          // 同时把墨迹宽高比给布局，宽字标才不会只占一个正方形槽。
+          const ink = measureSvgInk(text);
+          if (ink) {
+            state.logoInk = { ...(state.logoInk ?? {}), [key]: ink };
+            state.logoAspect = { ...(state.logoAspect ?? {}), [key]: ink.w / ink.h };
+          }
         } else {
           const dataUrl = await new Promise<string>((resolve, reject) => {
             const r = new FileReader();
@@ -870,6 +1014,7 @@ titleInput?.addEventListener('input', () => {
   sel.text = text;
   state.text = text;
   scheduleDraftSave();
+  dismissHint();
 });
 
 // —— 行数 / 速度 / 色板 ——
@@ -1024,6 +1169,8 @@ undoBtn?.addEventListener('click', () => {
   if (undoTimer !== undefined) window.clearTimeout(undoTimer);
   showUndo(false);
   apply({ ...snap });
+  // 面板还开着时，已选 chips 与格子的选中态要跟着回来
+  void renderIconGrid();
 });
 
 // —— 导出 ——
@@ -1040,6 +1187,14 @@ const webCodecsOk = typeof VideoEncoder === 'function' && typeof VideoFrame === 
 
 function setStatus(text: string): void {
   if (status) status.textContent = text;
+}
+
+/** 一次性状态：到点自动清空；期间用户触发了别的状态就不动它 */
+function flashStatus(text: string, ms = 2500): void {
+  setStatus(text);
+  window.setTimeout(() => {
+    if (status?.textContent === text) setStatus('');
+  }, ms);
 }
 
 function setBusy(busy: boolean): void {
@@ -1170,5 +1325,14 @@ refreshChrome();
 // 直到用户碰一下任何控件才补齐（表现为「图标加载不出来」）。
 void hydrateIcons();
 
-// 草稿恢复发生在模块顶部（DOM 引用还在 TDZ 里），提示要等这里才说得出
-if (restoredFromDraft) setStatus(ui(state.locale).draftRestored);
+// 草稿恢复发生在模块顶部（DOM 引用还在 TDZ 里），提示要等这里才说得出。
+// 提示 3 秒后自动消失：长期挂在状态行会被误读成「当前状态」。
+if (restoredFromDraft) {
+  const t = ui(state.locale);
+  flashStatus(
+    restoredUploadCount > 0 ? t.draftRestoredUploads(restoredUploadCount) : t.draftRestored,
+    3000,
+  );
+}
+// 第一次打开：给一句话提示 + 一键品牌示例；做过任意一次编辑后不再出现
+if (!hasOnboarded() && stageHint) stageHint.hidden = false;

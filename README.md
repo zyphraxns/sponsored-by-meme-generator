@@ -1,10 +1,13 @@
 <h1 align="center">sponsored-by</h1>
 
 <p align="center">Type a line, get a card where a fake sponsor scrolls across it.<br>
-Runs entirely in your browser — no server, no upload, no account.</p>
+Runs entirely in your browser — no server, no upload, no account.<br>
+<b><a href="https://zyphraxns.github.io/sponsored-by-meme-generator/">Try it live →</a></b></p>
 
 <p align="center">
-  <img src="docs/demo.gif" alt="An animated card reading SPONSORED BY, with rows of official brand logotypes — GitHub, Vercel, Google, Spotify, NVIDIA, Tailwind CSS, Tesla, Nike, Figma — scrolling underneath" width="600">
+  <a href="https://zyphraxns.github.io/sponsored-by-meme-generator/">
+    <img src="docs/demo.gif" alt="An animated card reading SPONSORED BY, with rows of official brand logotypes — GitHub, Vercel, Google, Spotify, NVIDIA, Tailwind CSS, Tesla, Nike, Figma — scrolling underneath" width="600">
+  </a>
 </p>
 
 <p align="center">
@@ -35,7 +38,8 @@ The interesting part is not the meme — it's that **the same rendering function
 - **Platform presets** — pick where you are posting and the export parameters adapt, with a size estimate against that platform's limit *before* you export.
 - **Real brand logotypes** — 3000+ single-colour marks from simple-icons plus 153 official wordmarks from SVGL, picked by background luminance so a dark card gets the light-on-dark variant. You can also upload your own SVG or bitmap.
 - **Share link and one-click random** — the whole selection fits in the URL hash, so a card can be shared or bookmarked; the randomiser rewrites layout, palette, icons and copy, and one undo puts it all back.
-- **Your work survives a reload** — the current selection is kept in local storage (share links win over the draft when both exist).
+- **The poster is the editor** — click the headline to change it; a one-time first-visit hint also offers a one-click brand demo.
+- **Your work survives a reload** — the current selection (including uploaded logos, up to the local storage limit) is kept in local storage (share links win over the draft when both exist).
 - **Bilingual UI** (English / 简体中文) with per-locale card text.
 
 ## Quick start

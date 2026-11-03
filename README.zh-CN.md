@@ -1,10 +1,13 @@
 <h1 align="center">sponsored-by</h1>
 
 <p align="center">写一句台词，得到一张「假赞助商滚过屏幕」的卡片。<br>
-全程在浏览器里跑 —— 无后端、不上传、不用注册。</p>
+全程在浏览器里跑 —— 无后端、不上传、不用注册。<br>
+<b><a href="https://zyphraxns.github.io/sponsored-by-meme-generator/">在线试用 →</a></b></p>
 
 <p align="center">
-  <img src="docs/demo.gif" alt="一张写着 SPONSORED BY 的动态卡片，下方多行官方品牌字标（GitHub、Vercel、Google、Spotify、NVIDIA、Tailwind CSS、Tesla、Nike、Figma）滚动而过" width="600">
+  <a href="https://zyphraxns.github.io/sponsored-by-meme-generator/">
+    <img src="docs/demo.gif" alt="一张写着 SPONSORED BY 的动态卡片，下方多行官方品牌字标（GitHub、Vercel、Google、Spotify、NVIDIA、Tailwind CSS、Tesla、Nike、Figma）滚动而过" width="600">
+  </a>
 </p>
 
 <p align="center">
@@ -35,7 +38,8 @@
 - **平台预设** —— 选「发到哪」，导出参数自动跟着变，并且在**导出前**就给出预估体积对比该平台上限。
 - **真实品牌字标** —— simple-icons 的 3000+ 单色标志，加上 SVGL 的 153 个官方字标，按背景明暗自动选变体；也可以上传自己的 SVG 或位图。
 - **分享链接与一键随机** —— 整套选择压进 URL hash，卡片可以分享或收藏；随机重写版式、配色、图标和文案，一步撤销就能全退回来。
-- **刷新不丢作品** —— 当前选择存在本地，误关标签页还能找回来（同时有分享链接时以链接为准）。
+- **海报就是编辑器** —— 点卡片上的标题就能改字；首次打开还有一键换成品牌示例的入口。
+- **刷新不丢作品** —— 当前选择（含上传的 logo，受本地存储上限约束）存在本地，误关标签页还能找回来（同时有分享链接时以链接为准）。
 - **界面双语**（English / 简体中文），卡片文案也跟随语言。
 
 ## 快速开始

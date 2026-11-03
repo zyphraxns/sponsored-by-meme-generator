@@ -105,8 +105,24 @@ export interface UiStrings {
   undoLabel: string;
   /** 窄屏工具条开关 */
   settingsLabel: string;
+  /** 窄屏工具条上直达标题的按钮 */
+  editTitleLabel: string;
+  /** 首屏一次性提示 */
+  stageHint: string;
+  /** 一键换成品牌示例 */
+  brandDemo: string;
+  /** 关闭首屏提示（无障碍标签） */
+  dismissHint: string;
+  /** 品牌示例已套用 */
+  brandDemoApplied: string;
+  /** 清空图标后的提示 */
+  iconsCleared: string;
+  /** 上传图太大、无法随草稿保留 */
+  uploadTooLarge: string;
   /** 恢复草稿时的提示 */
   draftRestored: string;
+  /** 恢复草稿时的提示（含上传图） */
+  draftRestoredUploads: (n: number) => string;
   caption: (info: CaptionInfo) => string;
   estimate: (info: EstimateInfo) => string;
 }
@@ -159,7 +175,15 @@ export const UI: Record<Locale, UiStrings> = {
     randomApplied: 'Randomised — undo?',
     undoLabel: 'Undo',
     settingsLabel: 'Settings',
+    editTitleLabel: 'Edit title',
+    stageHint: 'Click the headline to change it.',
+    brandDemo: 'Try a brand demo',
+    dismissHint: 'Dismiss',
+    brandDemoApplied: 'Brand demo loaded',
+    iconsCleared: 'Icons cleared — undo available',
+    uploadTooLarge: 'This logo is too large to keep after a reload.',
     draftRestored: 'Restored your last edit',
+    draftRestoredUploads: (n) => `Restored your last edit, including ${n} uploaded logo(s)`,
     caption: (i) => `${i.template} · ${i.ratio} · canvas ${i.w} × ${i.h} · ${i.loop}s loop`,
     estimate: (i) => {
       const head = `${i.format} ${i.w}×${i.h}`;
@@ -216,7 +240,15 @@ export const UI: Record<Locale, UiStrings> = {
     randomApplied: '已随机，可撤销',
     undoLabel: '撤销',
     settingsLabel: '设置',
+    editTitleLabel: '编辑标题',
+    stageHint: '点卡片上的标题就能改字。',
+    brandDemo: '换成品牌示例',
+    dismissHint: '关闭提示',
+    brandDemoApplied: '已换成品牌示例',
+    iconsCleared: '已清空图标，可撤销',
+    uploadTooLarge: '这个 logo 太大，刷新后无法保留。',
     draftRestored: '已恢复上次的编辑',
+    draftRestoredUploads: (n) => `已恢复上次的编辑，含 ${n} 个上传的 logo`,
     caption: (i) => `${i.template} · ${i.ratio} · 画布 ${i.w} × ${i.h} · 循环 ${i.loop} 秒`,
     estimate: (i) => {
       const head = `${i.format} ${i.w}×${i.h}`;

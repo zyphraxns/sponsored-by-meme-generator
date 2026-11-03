@@ -84,6 +84,8 @@
         cursor: pointer;
       }
       .toolbar__toggle[aria-expanded="true"] { background: var(--ink); color: var(--surface-raised); }
+      /* 窄屏右侧的两个直达入口：编辑标题 / 设置 */
+      .toolbar__actions { display: none; align-items: center; gap: 8px; }
       .field-label {
         font-size: 11px;
         letter-spacing: 0.08em;
@@ -132,10 +134,46 @@
         padding: 3.4vmin 4vmin;
       }
       /* 卡片即海报：整屏唯一的视觉锚点 */
+      .stage-wrap { width: min(72vmin, 960px); }
       .stage {
-        width: min(72vmin, 960px);
+        width: 100%;
+        /* 整张卡只有一个可编辑的东西：标题。text 光标提示「可以点」 */
+        cursor: text;
         animation: settle 320ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
       }
+      /* 首次打开的一句话提示：点标题就能改 + 一键品牌示例。只显示一次。 */
+      .stage-hint {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px 10px;
+        margin: 10px 0 0;
+        font-size: 12px;
+        color: var(--ink-quiet);
+      }
+      .stage-hint[hidden] { display: none; }
+      .stage-hint__action {
+        font: inherit;
+        font-size: 12px;
+        padding: 3px 8px;
+        border: 1px solid var(--hairline);
+        border-radius: 5px;
+        background: transparent;
+        color: var(--ink);
+        cursor: pointer;
+      }
+      .stage-hint__action:hover { border-color: var(--ink); background: var(--surface-raised); }
+      .stage-hint__dismiss {
+        border: none;
+        background: transparent;
+        color: var(--ink-quiet);
+        font: inherit;
+        font-size: 14px;
+        line-height: 1;
+        cursor: pointer;
+        padding: 2px 4px;
+      }
+      .stage-hint__dismiss:hover { color: var(--ink); }
       .stage svg {
         display: block;
         width: 100%;
@@ -467,9 +505,10 @@
       @media (max-width: 780px) {
         .toolbar { padding: 10px 4vmin; align-items: center; }
         .toolbar__toggle { display: inline-flex; }
+        .toolbar__actions { display: flex; }
         .controls { display: none; width: 100%; gap: 12px 16px; }
         .toolbar.is-open .controls { display: flex; }
-        .stage { width: min(92vw, 960px); }
+        .stage-wrap { width: min(92vw, 960px); }
         main { padding: 2.4vmin 4vmin; }
         footer { align-items: flex-start; }
         .actions { width: 100%; justify-content: flex-start; }
@@ -479,15 +518,18 @@
   <body>
     <header class="toolbar" id="toolbar">
       <span class="brand">sponsored-by</span>
-      <button
-        class="toolbar__toggle"
-        type="button"
-        id="toolbar-toggle"
-        aria-expanded="false"
-        aria-controls="controls"
-      >
-        设置
-      </button>
+      <div class="toolbar__actions">
+        <button class="toolbar__toggle" type="button" id="toolbar-edit">编辑标题</button>
+        <button
+          class="toolbar__toggle"
+          type="button"
+          id="toolbar-toggle"
+          aria-expanded="false"
+          aria-controls="controls"
+        >
+          设置
+        </button>
+      </div>
       <div class="controls" id="controls">
         <label class="field">
           <span class="field-label" id="label-platform">发到</span>
@@ -562,7 +604,16 @@
         </div>
       </div>
     </div>
-    <main><div class="stage" id="canvas"></div></main>
+    <main>
+      <div class="stage-wrap">
+        <div class="stage" id="canvas"></div>
+        <p class="stage-hint" id="stage-hint" hidden>
+          <span id="stage-hint-text">点卡片上的标题就能改字。</span>
+          <button class="stage-hint__action" type="button" id="brand-demo">换成品牌示例</button>
+          <button class="stage-hint__dismiss" type="button" id="hint-dismiss" aria-label="关闭提示">×</button>
+        </p>
+      </div>
+    </main>
     <footer>
       <div class="meta">
         <span class="caption" id="caption"></span>

@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **Click the poster to edit the headline.** The card itself now focuses the title input; a one-time first-visit hint explains it and offers a one-click brand demo. On narrow screens there is an `Edit title` shortcut next to `Settings`.
+- **Uploaded logos survive a reload.** Draft storage keeps the upload contents, their aspect ratio and measured ink box (up to ~3 MB); a logo too large to store is reported instead of silently disappearing.
 - **Optional symbol in front of a wordmark.** SVGL's wordmarks are inconsistent: Gemini and Mistral ship theirs with the symbol baked in, while OpenAI and GitHub ship text only (the symbol is a separate file). Width ratios and path counts don't separate the two cases reliably (2.23/2.71/3.12 and 6/2/16), so it can't be auto-detected — the icon panel now has a `Symbol + wordmark` switch. Turned on, OpenAI gets its flower back.
 - **Titles wrap before they shrink.** A long headline used to be squeezed onto one line until it hit the 8 px floor — on a 1080 canvas that is a grey smear. It now breaks into up to three lines and picks the largest size that fits.
 - **Undo after `Surprise me`.** The randomiser rewrites layout, palette, icons and copy in one click; a `Undo` button now sits next to it for 15 seconds.
@@ -26,6 +28,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **Escape closes the icon panel** and returns focus to the `Icons` button.
+- **`Clear` can be undone.** Clearing every selected icon takes an undo snapshot instead of wiping the selection.
+- **`Symbol + wordmark` travels in share links and drafts**, so a shared OpenAI card keeps its flower.
+- **The "restored your last edit" status clears itself** after a few seconds instead of staying on the status line.
 - **Half the icon panel rendered as solid black squares.** Two separate causes. The panel forced `fill: ink` on every `path`, which flattened the "coloured badge + white knockout" designs — Behance, Binance, Nano, and the whole Adobe app-icon family became solid blocks. And every inlined SVG kept its original ids, so logos that happen to use the same id (Angular uses `a`/`b`/`c`/`d`) broke each other's `clipPath`/`mask`. SVGL art now renders in its own colours, ids are namespaced per tile and per ticker instance, and the renderer only recolours *genuinely monochrome* marks (so single-colour logos still flip to the foreground colour on dark cards). Upload thumbnails and wordmarks get the same treatment.
 - **Share links dropped the headline.** `decodeShare` kept only entries whose value was a string, but the text map is `{layerId: {locale: string}}` — so the whole headline was filtered out and every shared card opened with the template default. Legacy flat links are still accepted.
 - **`Surprise me` never changed the headline.** Same shape mismatch in `random-gen`: it wrote `{en: '…'}`, the renderer reads `text[layerId][locale]`, so all five jokes were silently discarded.
@@ -56,6 +62,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **Brand logos are normalised by their visible ink, not by their viewBox.** Official wordmarks are cropped to their artwork, and typeset fallback names use the same cap height, so a row no longer swings 2.4× in height. The default emoji card keeps its original spacing, so the calibrated GIF size model stays valid.
 - **Layout menu reworked.** The `Inverted` variant is gone — the palette control covers it, and one-click colour switching inside a layout selector was redundant. New copy variants built on the same JSON-patch architecture: **Powered by** on every layout (including `Powered by nothing` on No sponsors, closing the joke), and **Presented by** on Sponsored by. The menu is now nine items where every entry changes something visible.
 - The default layout now uses a light background (`#f5f3ee`) with dark text, so dark brand marks stay visible; the former dark scheme moved to the `inverted` variant.
 - `scripts/cdp-selfcheck.mjs` works on Chrome 132+ again: `--headless=old` was removed upstream, and the initial DevTools target now reports `type: "other"` instead of `"page"`.

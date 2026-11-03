@@ -108,8 +108,8 @@ export async function exportMp4(
   // 官方完整字标（有则替代「符号 + 品牌名」）；变体按背景亮度挑，
   // 否则深底会拿到黑色字标直接消失
   const bg = state.palette?.bg ?? state.template.palette.bg;
-  const { svgs: logoSvgs, aspect: logoAspect } = await sceneLogoSvgs(state, bg);
-  const enriched: SceneState = { ...state, iconSvgs, logoSvgs, logoAspect };
+  const { svgs: logoSvgs, aspect: logoAspect, ink: logoInk } = await sceneLogoSvgs(state, bg);
+  const enriched: SceneState = { ...state, iconSvgs, logoSvgs, logoAspect, logoInk };
   for (let i = 0; i < total; i++) {
     const t = i / fps;
     const svg = await svgForRaster(scene(enriched, t), texts);

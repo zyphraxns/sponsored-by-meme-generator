@@ -39,6 +39,11 @@ describe('分享链接：文案必须能往返', () => {
     const decoded = decodeShare(encodeShare({ templateId: 'sponsored-by', platform: 'x' }));
     expect(decoded?.platform).toBe('x');
   });
+
+  it('「符号 + 字标」开关随链接 / 草稿往返', () => {
+    const decoded = decodeShare(encodeShare({ templateId: 'sponsored-by', logoWithSymbol: true }));
+    expect(decoded?.logoWithSymbol).toBe(true);
+  });
 });
 
 describe('随机生成器', () => {
