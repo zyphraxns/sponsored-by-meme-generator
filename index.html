@@ -47,11 +47,31 @@
         padding: 14px 4vmin;
         border-bottom: 1px solid var(--hairline);
       }
+      .toolbar__brand { display: flex; align-items: center; gap: 12px; }
       .brand {
         font-size: 13px;
         font-weight: 700;
         letter-spacing: 0.02em;
       }
+      /* 撤销 / 重做：工具栏里最小的两颗按钮，只放图标 */
+      .history-buttons { display: inline-flex; gap: 4px; }
+      .history-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        padding: 0;
+        border: 1px solid var(--hairline);
+        border-radius: 6px;
+        background: var(--surface-raised);
+        color: var(--ink);
+        cursor: pointer;
+      }
+      .history-btn:hover:not(:disabled) { border-color: var(--ink); }
+      .history-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+      .history-btn:disabled { opacity: 0.35; cursor: default; }
+      .history-btn svg { width: 14px; height: 14px; }
       .brand::before {
         content: "";
         display: inline-block;
@@ -135,6 +155,8 @@
       }
       /* 卡片即海报：整屏唯一的视觉锚点 */
       .stage-wrap { width: min(72vmin, 960px); }
+      /* 画布外层只负责定位「卡片内标题编辑器」 */
+      .stage-frame { position: relative; }
       .stage {
         width: 100%;
         /* 整张卡只有一个可编辑的东西：标题。text 光标提示「可以点」 */
@@ -174,11 +196,105 @@
         padding: 2px 4px;
       }
       .stage-hint__dismiss:hover { color: var(--ink); }
+      /* 透明底预览：棋盘格衬底，避免用户以为导出会带页面底色 */
+      .stage.is-transparent {
+        background: repeating-conic-gradient(#e7e3db 0% 25%, #f7f5f0 0% 50%) 0 0 / 20px 20px;
+        border-radius: 2px;
+      }
       .stage svg {
         display: block;
         width: 100%;
         height: auto;
         box-shadow: 0 1px 2px rgb(20 20 18 / 8%), 0 12px 32px rgb(20 20 18 / 12%);
+      }
+      /* 卡片内标题编辑：覆盖标题实际范围，面板悬浮在卡片上 */
+      .title-editor {
+        position: absolute;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px;
+        z-index: 2;
+      }
+      .title-editor[hidden] { display: none; }
+      .title-editor__panel {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        width: min(100%, 520px);
+        max-height: 100%;
+        padding: 8px;
+        overflow: auto;
+        border: 1px solid rgb(26 26 24 / 35%);
+        border-radius: 8px;
+        background: rgb(246 244 239 / 93%);
+        box-shadow: 0 8px 24px rgb(20 20 18 / 18%);
+        backdrop-filter: blur(3px);
+      }
+      .title-editor__input {
+        width: 100%;
+        min-height: 40px;
+        max-height: 120px;
+        padding: 6px 8px;
+        border: 1px solid var(--hairline);
+        border-radius: 6px;
+        background: #fff;
+        color: var(--ink);
+        font: inherit;
+        font-size: clamp(14px, 2.2vmin, 18px);
+        line-height: 1.35;
+        text-align: center;
+        resize: none;
+      }
+      .title-editor__input:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+      .title-editor__hint {
+        font-size: 11px;
+        line-height: 1.3;
+        color: var(--ink-quiet);
+        text-align: center;
+      }
+      /* 标题被压到可读下限时的非打断提示 */
+      .stage-warn {
+        margin: 8px 0 0;
+        font-size: 12px;
+        line-height: 1.45;
+        color: var(--accent-warn, #b45309);
+      }
+      .stage-warn[hidden] { display: none; }
+      /* 预览控制：暂停 + 时间轴（暂停后才可拖） */
+      .preview-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 8px;
+      }
+      .preview-btn {
+        font: inherit;
+        font-size: 12px;
+        padding: 4px 12px;
+        border: 1px solid var(--hairline);
+        border-radius: 6px;
+        background: var(--surface-raised);
+        color: var(--ink);
+        cursor: pointer;
+        flex: 0 0 auto;
+      }
+      .preview-btn:hover:not(:disabled) { border-color: var(--ink); }
+      .preview-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+      .preview-btn:disabled { opacity: 0.45; cursor: default; }
+      .preview-scrub {
+        flex: 1 1 auto;
+        min-width: 80px;
+        accent-color: var(--ink);
+      }
+      .preview-scrub:disabled { opacity: 0.45; cursor: default; }
+      .preview-time {
+        font-size: 11px;
+        color: var(--ink-quiet);
+        font-variant-numeric: tabular-nums;
+        min-width: 72px;
+        text-align: right;
+        flex: 0 0 auto;
       }
       footer {
         display: flex;
@@ -211,6 +327,18 @@
         font-size: 12px;
         color: var(--ink-quiet);
         margin-right: 4px;
+      }
+      /* 状态行内的重试入口：沿用状态色，避免在画布旁抢视觉焦点 */
+      .status__retry {
+        font: inherit;
+        font-size: 12px;
+        color: inherit;
+        background: none;
+        border: 0;
+        padding: 0 0 0 4px;
+        cursor: pointer;
+        text-decoration: underline;
+        text-underline-offset: 2px;
       }
       .btn {
         font: inherit;
@@ -248,6 +376,38 @@
         padding: 8px 4px;
       }
       .btn--ghost:hover { background: transparent; color: var(--ink); }
+      /* 平台推荐的导出格式：按钮本身加描边，行内再挂一枚徽标。
+         徽标文字由 JS 写入 data-badge（跟随中英文切换）。 */
+      .btn.is-recommended {
+        border-color: var(--ink);
+        box-shadow: 0 0 0 2px var(--ink);
+      }
+      .btn.is-recommended::after {
+        content: attr(data-badge);
+        display: inline-block;
+        margin-left: 6px;
+        padding: 1px 5px;
+        border: 1px solid var(--ink);
+        border-radius: 999px;
+        background: var(--surface-raised);
+        color: var(--ink);
+        font-size: 10px;
+        line-height: 1.5;
+        vertical-align: 1px;
+      }
+      /* 快速 GIF 档：低分辨率 / 低帧率，默认关闭 */
+      .quick-gif {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        flex: 0 0 auto;
+        font-size: 12px;
+        color: var(--ink-quiet);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .quick-gif input { margin: 0; cursor: pointer; accent-color: var(--ink); }
+      .quick-gif__hint { font-variant-numeric: tabular-nums; }
       .repo-link {
         font-size: 12px;
         color: var(--ink-quiet);
@@ -255,6 +415,41 @@
         width: fit-content;
       }
       .repo-link:hover { color: var(--ink); text-decoration: underline; }
+      /* GitHub 预设导出 GIF 后的 README 片段：整行铺开，代码用等宽字体可选中 */
+      .readme-snippet {
+        flex: 1 0 100%;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px 10px;
+        padding-top: 10px;
+        border-top: 1px solid var(--hairline);
+      }
+      .readme-snippet[hidden] { display: none; }
+      .readme-snippet__label {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ink-quiet);
+      }
+      .readme-snippet__code {
+        flex: 1 1 260px;
+        min-width: 0;
+        padding: 5px 8px;
+        border: 1px solid var(--hairline);
+        border-radius: 5px;
+        background: var(--surface-raised);
+        color: var(--ink);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        overflow-wrap: anywhere;
+        user-select: all;
+      }
+      .readme-snippet__hint {
+        flex: 1 0 100%;
+        font-size: 11px;
+        color: var(--ink-quiet);
+      }
       @keyframes settle {
         from { opacity: 0; transform: scale(0.97) translateY(6px); }
         to { opacity: 1; transform: none; }
@@ -344,8 +539,15 @@
         gap: 12px;
         padding: 12px 18px;
         border-top: 1px solid var(--hairline);
+        flex-wrap: wrap;
       }
-      .icon-panel__actions { display: flex; gap: 8px; align-items: center; }
+      .icon-panel__actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
       .icon-panel__check {
         display: flex;
         align-items: center;
@@ -406,15 +608,26 @@
       .icon-upload-row .kill:hover { color: var(--ink); }
       .icon-panel__hint { font-size: 11px; color: var(--ink-quiet); }
       .icon-panel__hint.is-warn { color: var(--warn); }
+      /* 标题 / 副标题输入框按模板实际文本层动态生成；display: contents 让每个
+         field 直接参与工具栏的 flex 排布 */
+      .text-fields { display: contents; }
+      /* 标题：多行 textarea，高度随行数自动长高（由 main.ts 计算） */
       .title-input {
         font: inherit;
         font-size: 13px;
-        padding: 6px 10px;
+        line-height: 1.3;
+        width: 170px;
+        min-height: 30px;
+        max-height: 96px;
+        padding: 5px 10px;
         border: 1px solid var(--hairline);
         border-radius: 6px;
         background: var(--surface-raised);
         color: var(--ink);
+        resize: none;
+        overflow-y: auto;
       }
+      .title-input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
       .range {
         width: 92px;
         flex: 0 0 auto;
@@ -426,6 +639,13 @@
         min-width: 32px;
         text-align: left;
         font-variant-numeric: tabular-nums;
+      }
+      /* MP4 不可用的原因：不能只藏在 title 里（触屏没有 hover） */
+      .export-note {
+        font-size: 11px;
+        line-height: 1.35;
+        color: var(--ink-quiet);
+        max-width: 220px;
       }
       .swatches {
         display: flex;
@@ -454,6 +674,66 @@
         cursor: pointer;
       }
       .swatch.is-custom { border-color: var(--ink); }
+      /* —— 一键主题 ——
+         每个色片同时露出背景、前景、accent 三色；颜色由 JS 写成 CSS 变量。 */
+      .theme-chips {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .theme-chip {
+        position: relative;
+        width: 30px;
+        height: 22px;
+        padding: 0;
+        border: 1px solid var(--hairline);
+        border-radius: 5px;
+        background: var(--theme-bg, #fff);
+        cursor: pointer;
+        box-sizing: border-box;
+        overflow: hidden;
+      }
+      .theme-chip__mark {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 9px;
+        height: 3px;
+        border-radius: 1px;
+        transform: translate(-50%, -50%);
+        background: var(--theme-fg, #111);
+      }
+      .theme-chip__accent {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 4px;
+        background: var(--theme-accent, #b45309);
+      }
+      .theme-chip[aria-pressed="true"] {
+        outline: 2px solid var(--ink);
+        outline-offset: 1px;
+      }
+      .theme-chip:focus-visible {
+        outline: 2px solid var(--ink);
+        outline-offset: 2px;
+      }
+      .theme-chip--auto {
+        width: auto;
+        min-width: 38px;
+        padding: 0 6px;
+        font: inherit;
+        font-size: 10px;
+        color: var(--ink-quiet);
+        background: var(--surface-raised);
+      }
+      .theme-chip--auto:hover { color: var(--ink); border-color: var(--ink); }
+      .theme-chip--auto[aria-pressed="true"] {
+        color: var(--ink);
+        border-color: var(--ink);
+      }
 
       /* —— 已选图标条 ——
          选到第 9 个时用户已经记不清顺序，也没有任何地方能核对。 */
@@ -496,8 +776,82 @@
         padding: 2px 5px;
       }
       .chip button:hover { color: var(--ink); }
+      /* 拖动排序手柄：只有它吃掉触摸手势，chip 其余部分仍可正常滚动 */
+      .chip__grip {
+        flex: 0 0 auto;
+        padding: 0 2px;
+        color: var(--ink-quiet);
+        font-size: 12px;
+        line-height: 1;
+        cursor: grab;
+        touch-action: none;
+        user-select: none;
+      }
+      .chip__grip:hover { color: var(--ink); }
+      .chip.is-dragging {
+        position: relative;
+        border-color: var(--ink);
+        background: #fff;
+        opacity: 0.85;
+      }
+      .chip.is-dragging .chip__grip { cursor: grabbing; }
+      .chip:focus-visible {
+        outline: 2px solid var(--ink);
+        outline-offset: 1px;
+      }
       /* 预览图拉不回来的格子：给出可见的失败态，而不是留白让用户以为网站坏了 */
       .icon-cell.is-failed { border-color: var(--warn); color: var(--warn); }
+      /* 网格里的分组标题 / 搜索空态：横跨整行，不占一个图标位 */
+      .icon-grid__label,
+      .icon-empty {
+        grid-column: 1 / -1;
+        margin: 0;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ink-quiet);
+      }
+      .icon-empty { text-transform: none; letter-spacing: 0; font-size: 12px; }
+
+      /* —— 粗指针（触屏）：把可点区域做到至少 44×44 ——
+         视觉样式不变形，只放大控件本体；相邻控件本来就有 flex gap，
+         放大后仍保持间距，不会互相覆盖导致误触。 */
+      @media (pointer: coarse) {
+        .btn,
+        .seg,
+        .select,
+        .toolbar__toggle,
+        .preview-btn,
+        .quick-gif,
+        .icon-panel__check,
+        .stage-hint__action,
+        .stage-hint__dismiss,
+        .status__retry,
+        .title-input,
+        .range,
+        .preview-scrub,
+        .icon-search,
+        .icon-upload-row input[type="text"] {
+          min-height: 44px;
+        }
+        .seg { min-width: 44px; padding: 10px 14px; }
+        .history-btn { width: 44px; height: 44px; }
+        .history-btn svg { width: 18px; height: 18px; }
+        .swatch { width: 44px; height: 44px; border-radius: 8px; }
+        .theme-chip { min-width: 44px; height: 44px; border-radius: 8px; }
+        .chip { min-height: 44px; padding: 4px 4px 4px 10px; }
+        .chip button,
+        .icon-upload-row .kill { min-width: 44px; min-height: 44px; }
+        .chip__grip {
+          min-width: 44px;
+          min-height: 44px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 16px;
+        }
+        .icon-cell { min-height: 48px; }
+      }
 
       /* —— 窄屏 ——
          390 宽实测：工具条 376px 高（屏高 45%），卡片只剩 281px，
@@ -517,7 +871,23 @@
   </head>
   <body>
     <header class="toolbar" id="toolbar">
-      <span class="brand">sponsored-by</span>
+      <div class="toolbar__brand">
+        <span class="brand">sponsored-by</span>
+        <div class="history-buttons" id="history-buttons" role="group">
+          <button class="history-btn" id="history-undo" type="button" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M9 14L4 9l5-5" />
+              <path d="M4 9h10a6 6 0 0 1 0 12h-3" />
+            </svg>
+          </button>
+          <button class="history-btn" id="history-redo" type="button" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M15 14l5-5-5-5" />
+              <path d="M20 9H10a6 6 0 0 0 0 12h3" />
+            </svg>
+          </button>
+        </div>
+      </div>
       <div class="toolbar__actions">
         <button class="toolbar__toggle" type="button" id="toolbar-edit">编辑标题</button>
         <button
@@ -551,6 +921,7 @@
           <div class="segmented" id="ratio-switch" role="group" aria-labelledby="label-ratio">
             <button class="seg" type="button" data-ratio="1:1">1:1</button>
             <button class="seg" type="button" data-ratio="4:5">4:5</button>
+            <button class="seg" type="button" data-ratio="9:16">9:16</button>
             <button class="seg" type="button" data-ratio="16:9">16:9</button>
           </div>
         </div>
@@ -558,23 +929,24 @@
           <span class="field-label" id="label-icons">图标</span>
           <button class="btn" type="button" id="icon-btn" title="选择图标">图标</button>
         </div>
-        <div class="field">
-          <span class="field-label" id="label-title">标题</span>
-          <input class="title-input" id="title-input" type="text" spellcheck="false" autocomplete="off" />
-        </div>
+        <div class="text-fields" id="text-fields"></div>
         <div class="field">
           <span class="field-label" id="label-rows">行数</span>
-          <input class="range" id="rows-range" type="range" min="1" max="12" value="3" />
+          <input class="range" id="rows-range" type="range" min="1" max="12" value="3" aria-labelledby="label-rows" />
           <span class="range-val" id="rows-val">3</span>
         </div>
         <div class="field">
           <span class="field-label" id="label-speed">速度</span>
-          <input class="range" id="speed-range" type="range" min="50" max="200" value="100" />
+          <input class="range" id="speed-range" type="range" min="50" max="200" value="100" aria-labelledby="label-speed" />
           <span class="range-val" id="speed-val">1×</span>
         </div>
         <div class="field">
           <span class="field-label" id="label-palette">色板</span>
           <div class="swatches" id="palette-swatches"></div>
+        </div>
+        <div class="field">
+          <span class="field-label" id="label-theme">主题</span>
+          <div class="theme-chips" id="theme-chips" role="group" aria-labelledby="label-theme"></div>
         </div>
       </div>
     </header>
@@ -585,7 +957,7 @@
           <span class="field-label" id="icon-panel-title">选择图标</span>
           <button class="btn" type="button" id="icon-close">关闭</button>
         </div>
-        <input class="icon-search" id="icon-search" type="search" placeholder="搜索品牌…" autocomplete="off" />
+        <input class="icon-search" id="icon-search" type="search" placeholder="搜索品牌…" autocomplete="off" aria-label="搜索品牌" />
         <div class="icon-selected" id="icon-selected" hidden></div>
         <div class="icon-uploads" id="icon-uploads" hidden></div>
         <div class="icon-grid" id="icon-grid" role="listbox"></div>
@@ -595,6 +967,10 @@
             <label class="icon-panel__check">
               <input type="checkbox" id="logo-with-symbol" />
               <span id="logo-with-symbol-label">符号 + 字标</span>
+            </label>
+            <label class="icon-panel__check">
+              <input type="checkbox" id="mono-logos" />
+              <span id="mono-logos-label">单色 logo</span>
             </label>
             <button class="btn btn--secondary" type="button" id="icon-retry" hidden>重试</button>
             <input type="file" id="icon-upload" accept=".svg,image/png,image/jpeg,image/webp" multiple hidden />
@@ -606,12 +982,43 @@
     </div>
     <main>
       <div class="stage-wrap">
-        <div class="stage" id="canvas"></div>
+        <div class="stage-frame">
+          <div class="stage" id="canvas"></div>
+          <div class="title-editor" id="title-editor" hidden>
+            <div class="title-editor__panel">
+              <textarea
+                class="title-editor__input"
+                id="title-editor-input"
+                rows="2"
+                spellcheck="false"
+                autocomplete="off"
+                aria-label="在卡片上编辑标题"
+              ></textarea>
+              <span class="title-editor__hint" id="title-editor-hint">回车换行 · Cmd/Ctrl+Enter 完成</span>
+            </div>
+          </div>
+        </div>
         <p class="stage-hint" id="stage-hint" hidden>
           <span id="stage-hint-text">点卡片上的标题就能改字。</span>
           <button class="stage-hint__action" type="button" id="brand-demo">换成品牌示例</button>
           <button class="stage-hint__dismiss" type="button" id="hint-dismiss" aria-label="关闭提示">×</button>
         </p>
+        <p class="stage-warn" id="stage-warn" role="status" aria-live="polite" hidden></p>
+        <div class="preview-bar">
+          <button class="preview-btn" id="preview-toggle" type="button" aria-pressed="false">暂停</button>
+          <input
+            class="preview-scrub"
+            id="preview-scrub"
+            type="range"
+            min="0"
+            max="1000"
+            step="1"
+            value="0"
+            aria-label="预览时间轴"
+            disabled
+          />
+          <span class="preview-time" id="preview-time">0.0 / 4.0s</span>
+        </div>
       </div>
     </main>
     <footer>
@@ -631,12 +1038,30 @@
         <span class="status" id="status" role="status" aria-live="polite"></span>
         <button class="btn btn--ghost" id="undo-btn" type="button" hidden>撤销</button>
         <button class="btn btn--ghost" id="export-cancel" type="button" hidden>取消</button>
-        <button class="btn" id="export-gif" type="button">导出 GIF</button>
-        <button class="btn btn--secondary" id="export-mp4" type="button">导出 MP4</button>
-        <button class="btn btn--secondary" id="export-png" type="button">导出 PNG</button>
-        <button class="btn btn--secondary" id="export-svg" type="button">导出 SVG</button>
+        <label class="quick-gif" id="transparent-bg-wrap">
+          <input type="checkbox" id="transparent-bg" />
+          <span id="transparent-bg-label">透明 PNG/SVG</span>
+        </label>
+        <label class="quick-gif" id="quick-gif-wrap" title="720p / 12fps 快速导出">
+          <input type="checkbox" id="quick-gif" />
+          <span id="quick-gif-label">快速 GIF</span>
+          <span class="quick-gif__hint" id="quick-gif-hint"></span>
+        </label>
+        <button class="btn" id="export-gif" type="button" data-format="gif">导出 GIF</button>
+        <button class="btn btn--secondary" id="export-mp4" type="button" data-format="mp4">导出 MP4</button>
+        <span class="export-note" id="mp4-note" hidden></span>
+        <button class="btn btn--secondary" id="export-png" type="button" data-format="png">导出 PNG</button>
+        <button class="btn btn--secondary" id="export-svg" type="button" data-format="svg">导出 SVG</button>
+        <button class="btn btn--secondary" id="share-card" type="button" title="分享卡片图片">分享卡片</button>
         <button class="btn btn--secondary" id="share-link" type="button" title="复制当前状态的分享链接">复制链接</button>
         <button class="btn btn--secondary" id="random-btn" type="button" title="随机生成一个版式">随机</button>
+      </div>
+      <div class="readme-snippet" id="readme-snippet" hidden>
+        <span class="readme-snippet__label" id="readme-snippet-label">README 片段</span>
+        <code class="readme-snippet__code" id="readme-snippet-code"></code>
+        <button class="btn btn--secondary" type="button" id="readme-snippet-copy">复制 Markdown</button>
+        <button class="btn btn--ghost" type="button" id="readme-snippet-close" aria-label="关闭">×</button>
+        <span class="readme-snippet__hint" id="readme-snippet-hint"></span>
       </div>
     </footer>
     <script type="module" src="/src/main.ts"></script>

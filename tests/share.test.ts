@@ -44,6 +44,11 @@ describe('分享链接：文案必须能往返', () => {
     const decoded = decodeShare(encodeShare({ templateId: 'sponsored-by', logoWithSymbol: true }));
     expect(decoded?.logoWithSymbol).toBe(true);
   });
+
+  it('9:16 比例往返后仍是 9:16（不回落成 1:1）', () => {
+    const decoded = decodeShare(encodeShare({ templateId: 'sponsored-by', ratio: '9:16' }));
+    expect(decoded?.ratio).toBe('9:16');
+  });
 });
 
 describe('随机生成器', () => {

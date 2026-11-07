@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { scene } from '../src/core/scene';
 import { svgForRaster, svgForFile, notoSlicesFor } from '../src/exporters/fonts';
+import { exportFilename, slugifyTitle } from '../src/exporters/filename';
 import { svgToDataUri } from '../src/exporters/png';
 import { pngFilename, svgFileContent, svgFilename, svgToBlob } from '../src/exporters/svg';
 import { sponsoredBy } from '../src/templates';
@@ -90,13 +91,38 @@ describe('svgToDataUri', () => {
 });
 
 describe('filenames', () => {
-  it('按画布尺寸命名', () => {
-    expect(pngFilename(state)).toBe('sponsored-by-1080x1080.png');
-    expect(svgFilename(state)).toBe('sponsored-by-1080x1080.svg');
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 7, 12));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('标题 slug + 日期 + 画布尺寸', () => {
+    expect(pngFilename(state)).toBe('sponsored-by-2026-11-07-1080x1080.png');
+    expect(svgFilename(state)).toBe('sponsored-by-2026-11-07-1080x1080.svg');
   });
 
   it('16:9 尺寸进文件名', () => {
-    expect(pngFilename({ ...state, ratio: '16:9' })).toBe('sponsored-by-1080x608.png');
+    expect(pngFilename({ ...state, ratio: '16:9' })).toBe('sponsored-by-2026-11-07-1080x608.png');
+  });
+
+  it('中文标题保留汉字，只有符号时回落到模板 id', () => {
+    expect(slugifyTitle('由以下品牌赞助')).toBe('由以下品牌赞助');
+    expect(slugifyTitle('  💸💸  ')).toBe('sponsored-by');
+    expect(slugifyTitle('Hello, World!')).toBe('hello-world');
+    const filename = exportFilename(
+      { ...state, text: { title: { zh: '由以下品牌赞助' } }, locale: 'zh' },
+      'gif',
+      new Date(2026, 10, 7),
+    );
+    expect(filename).toBe('由以下品牌赞助-2026-11-07-1080x1080.gif');
+  });
+
+  it('超长标题按码点截断，不留尾部连字符', () => {
+    const slug = slugifyTitle('a'.repeat(60));
+    expect(slug.length).toBe(48);
   });
 });
 

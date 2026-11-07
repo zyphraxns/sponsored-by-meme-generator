@@ -7,15 +7,38 @@
  */
 import { decodeShare, encodeShare } from './share-link';
 import type { ShareableState } from './share-link';
-import type { SvgInkBox, TickerItem } from './core/types';
+import type { Ratio, SvgInkBox, TickerItem } from './core/types';
 
 const KEY = 'sponsored-by:draft:v1';
+
+/**
+ * 9:16 是第二批新增比例，SHARE 编码（由另一条线维护）还没收录它。
+ * 草稿因此单独存一份比例，避免刷新后 9:16 被静默打回 1:1。
+ */
+const RATIO_VALUES: readonly Ratio[] = ['1:1', '4:5', '9:16', '16:9'];
+
+function normalizeRatio(value: unknown): Ratio | undefined {
+  return typeof value === 'string' && (RATIO_VALUES as readonly string[]).includes(value)
+    ? (value as Ratio)
+    : undefined;
+}
 
 /**
  * 上传内容的存储上限。localStorage 通常 5MB（UTF-16 字符串按字符计），
  * 留出选择编码与其它键的空间；超过就只保存能带走的，并让 UI 提示。
  */
 const MAX_UPLOAD_CHARS = 3 * 1024 * 1024;
+
+/** 分享编码不带的 UI 状态，草稿需要额外保存 */
+type DraftSelection = ShareableState & { logoMode?: 'brand' | 'mono' };
+
+const HEX_ACCENT = /^#([0-9a-f]{6})$/i;
+
+function normalizeAccent(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const match = HEX_ACCENT.exec(value);
+  return match ? `#${match[1]!.toLowerCase()}` : undefined;
+}
 
 interface DraftPayload {
   v: 1;
@@ -29,6 +52,12 @@ interface DraftPayload {
   a?: Record<string, number>;
   /** 上传 SVG 的墨迹盒（按真实图案高度归一） */
   k?: Record<string, SvgInkBox>;
+  /** 单色 logo（'brand' 是默认值，不写） */
+  m?: 'mono';
+  /** accent 色（分享编码只带 bg / fg） */
+  ac?: string;
+  /** 比例（分享编码还没收录 9:16，草稿单独存一份） */
+  r?: string;
 }
 
 export interface LoadedDraft {
@@ -39,6 +68,12 @@ export interface LoadedDraft {
   uploads?: Record<string, string>;
   aspects?: Record<string, number>;
   ink?: Record<string, SvgInkBox>;
+  /** 单色 logo（旧草稿没有该字段 = brand） */
+  logoMode?: 'brand' | 'mono';
+  /** accent 色（旧草稿没有该字段时跟随模板默认） */
+  accent?: string;
+  /** 比例（旧草稿没有该字段时沿用分享编码里的值） */
+  ratio?: Ratio;
 }
 
 export interface SaveResult {
@@ -47,7 +82,7 @@ export interface SaveResult {
 }
 
 export function saveDraft(
-  selection: ShareableState,
+  selection: DraftSelection,
   assets?: Record<string, string>,
   aspects?: Record<string, number>,
   ink?: Record<string, SvgInkBox>,
@@ -80,6 +115,7 @@ export function saveDraft(
     if (aspects?.[key] !== undefined) savedAspect[key] = aspects[key];
     if (ink?.[key]) savedInk[key] = ink[key];
   }
+  const accent = normalizeAccent(selection.palette?.accent);
   const payload: DraftPayload = {
     v: 1,
     s: encodeShare(state),
@@ -87,6 +123,9 @@ export function saveDraft(
     u: uploads,
     ...(Object.keys(savedAspect).length > 0 ? { a: savedAspect } : {}),
     ...(Object.keys(savedInk).length > 0 ? { k: savedInk } : {}),
+    ...(selection.logoMode === 'mono' ? { m: 'mono' as const } : {}),
+    ...(accent ? { ac: accent } : {}),
+    r: selection.ratio,
   };
 
   try {
@@ -106,7 +145,19 @@ export function loadDraft(): LoadedDraft | null {
       const p = JSON.parse(raw) as Partial<DraftPayload>;
       if (typeof p.s !== 'string') return null;
       const state = decodeShare(p.s);
-      return state ? { state, icons: p.i, uploads: p.u, aspects: p.a, ink: p.k } : null;
+      if (!state) return null;
+      const accent = normalizeAccent(p.ac);
+      const ratio = normalizeRatio(p.r);
+      return {
+        state,
+        icons: p.i,
+        uploads: p.u,
+        aspects: p.a,
+        ink: p.k,
+        ...(p.m === 'mono' ? { logoMode: 'mono' as const } : {}),
+        ...(accent ? { accent } : {}),
+        ...(ratio ? { ratio } : {}),
+      };
     }
     // 2026-11-03 之前的旧草稿：直接是分享编码字符串
     const legacy = decodeShare(raw);

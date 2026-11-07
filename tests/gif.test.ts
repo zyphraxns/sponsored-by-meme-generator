@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { frameCount, frameDelayMs, frameTime, gifFilename } from '../src/exporters/gif';
 import { sponsoredBy } from '../src/templates';
 import type { SceneState } from '../src/core/types';
@@ -36,8 +36,14 @@ describe('GIF 帧调度（SPEC 5.1）', () => {
     expect(frameCount(12, 4)).toBe(50);
   });
 
-  it('文件名按画布尺寸', () => {
-    expect(gifFilename(state)).toBe('sponsored-by-1080x1080.gif');
-    expect(gifFilename({ ...state, ratio: '4:5' })).toBe('sponsored-by-1080x1350.gif');
+  it('文件名按标题 + 日期 + 画布尺寸', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 7, 12));
+    try {
+      expect(gifFilename(state)).toBe('sponsored-by-2026-11-07-1080x1080.gif');
+      expect(gifFilename({ ...state, ratio: '4:5' })).toBe('sponsored-by-2026-11-07-1080x1350.gif');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

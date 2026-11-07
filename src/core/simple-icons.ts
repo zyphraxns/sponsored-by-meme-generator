@@ -192,10 +192,16 @@ const svgCache = new Map<string, Promise<string>>();
 export function getIconSvg(slug: string): Promise<string> {
   let task = svgCache.get(slug);
   if (!task) {
-    task = fetch(ICON_SVG_URL(slug)).then((r) => {
-      if (!r.ok) throw new Error(`图标 ${slug} 加载失败（HTTP ${r.status}）`);
-      return r.text();
-    });
+    // 必须带超时：单个 CDN 请求挂起会让整批图标预取永远等下去，
+    // 表现是画布一直缺图而不是报错。超时值对齐 logos.ts。
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 8000);
+    task = fetch(ICON_SVG_URL(slug), { signal: ctrl.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error(`图标 ${slug} 加载失败（HTTP ${r.status}）`);
+        return r.text();
+      })
+      .finally(() => clearTimeout(tid));
     // 失败的不留在缓存里：否则「重试」会一直拿到同一个 rejected promise
     task.catch(() => svgCache.delete(slug));
     svgCache.set(slug, task);

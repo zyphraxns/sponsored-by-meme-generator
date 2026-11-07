@@ -2,7 +2,7 @@
   "id": "sponsored-by",
   "version": 1,
   "name": { "en": "Sponsored by", "zh": "由以下品牌赞助" },
-  "canvas": { "ratios": ["1:1", "4:5", "16:9"], "basePx": 1080 },
+  "canvas": { "ratios": ["1:1", "4:5", "9:16", "16:9"], "basePx": 1080 },
   "constraints": { "maxColors": 8, "allowGradient": false, "allowAlpha": false },
   "palette": { "bg": "#f5f3ee", "fg": "#111111", "accent": "#b45309" },
   "layers": [
@@ -14,6 +14,19 @@
       "fit": "auto-shrink",
       "box": [0.08, 0.1, 0.84, 0.22],
       "align": "center"
+    },
+    {
+      "type": "text",
+      "id": "subtitle",
+      "label": { "en": "Subtitle", "zh": "副标题" },
+      "default": { "en": "no budget, all vibes", "zh": "零预算，全靠热爱" },
+      "font": "display",
+      "fit": "auto-shrink",
+      "box": [0.1, 0.33, 0.8, 0.05],
+      "align": "center",
+      "accent": false,
+      "weight": 700,
+      "letterSpacing": 0.04
     },
     {
       "type": "ticker",

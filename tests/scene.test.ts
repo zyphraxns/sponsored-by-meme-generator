@@ -115,9 +115,10 @@ describe('无缝循环（M2 判据：循环点无跳帧）', () => {
 });
 
 describe('canvasSize', () => {
-  it('三档比例', () => {
+  it('四档比例', () => {
     expect(canvasSize(sponsoredBy, '1:1')).toEqual({ w: 1080, h: 1080 });
     expect(canvasSize(sponsoredBy, '4:5')).toEqual({ w: 1080, h: 1350 });
+    expect(canvasSize(sponsoredBy, '9:16')).toEqual({ w: 1080, h: 1920 });
     expect(canvasSize(sponsoredBy, '16:9')).toEqual({ w: 1080, h: 608 });
   });
 });

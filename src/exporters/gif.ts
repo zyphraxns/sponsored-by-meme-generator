@@ -4,6 +4,7 @@ import { canvasSize, loopSecondsFor, scene, sceneIconSvgs, sceneLogoSvgs, sceneT
 import { frameCount, frameDelayMs, frameTime } from '../core/frames';
 import type { ExportProgress } from '../core/frames';
 import type { SceneState } from '../core/types';
+import { exportFilename } from './filename';
 import { rasterizeScene, rasterizeToCanvas } from './png';
 import { svgForRaster } from './fonts';
 
@@ -28,26 +29,28 @@ export async function exportGif(
   onProgress?: GifProgress,
   signal?: AbortSignal,
 ): Promise<Blob> {
-  const { w, h } = canvasSize(state.template, state.ratio);
-  const loop = loopSecondsFor(state);
-  const fps = state.template.animation.fps;
+  // GIF 没有 alpha 通道：透明底只服务 PNG / SVG，逐帧渲染前强制恢复背景色
+  const opaque: SceneState = state.transparentBg ? { ...state, transparentBg: false } : state;
+  const { w, h } = canvasSize(opaque.template, opaque.ratio);
+  const loop = loopSecondsFor(opaque);
+  const fps = opaque.template.animation.fps;
   const delayMs = frameDelayMs(fps);
   const total = frameCount(fps, loop);
   // 文案在整段动画里不变：字体切片选择只做一次（首帧 fetch，其余帧命中缓存）
-  const texts = sceneTexts(state);
+  const texts = sceneTexts(opaque);
   // 图标同理：整段动画用到的 SVG 图标只预取一次，写入 iconSvgs 供 scene() 渲染
-  const iconSvgs = await sceneIconSvgs(state);
+  const iconSvgs = await sceneIconSvgs(opaque);
   // 官方完整字标（有则替代「符号 + 品牌名」）；变体按背景亮度挑，
   // 否则深底会拿到黑色字标直接消失
-  const bg = state.palette?.bg ?? state.template.palette.bg;
-  const { svgs: logoSvgs, aspect: logoAspect, ink: logoInk } = await sceneLogoSvgs(state, bg);
-  const enriched: SceneState = { ...state, iconSvgs, logoSvgs, logoAspect, logoInk };
+  const bg = opaque.palette?.bg ?? opaque.template.palette.bg;
+  const { svgs: logoSvgs, aspect: logoAspect, ink: logoInk } = await sceneLogoSvgs(opaque, bg);
+  const enriched: SceneState = { ...opaque, iconSvgs, logoSvgs, logoAspect, logoInk };
 
   const encoder = new Encoder({
     width: w,
     height: h,
-    maxColors: state.template.export.gifMaxColors,
-    dither: state.template.export.dither as DitherMethod,
+    maxColors: opaque.template.export.gifMaxColors,
+    dither: opaque.template.export.dither as DitherMethod,
     // 默认即 looped:true / loopCount:0（无限循环），显式写出以防上游改默认
     looped: true,
     loopCount: 0,
@@ -77,6 +80,5 @@ export async function exportGif(
 }
 
 export function gifFilename(state: SceneState): string {
-  const { w, h } = canvasSize(state.template, state.ratio);
-  return `${state.template.id}-${w}x${h}.gif`;
+  return exportFilename(state, 'gif');
 }

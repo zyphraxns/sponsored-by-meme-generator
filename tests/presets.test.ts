@@ -4,6 +4,7 @@ import {
   colorFactor,
   deriveExportState,
   estimateGifBytes,
+  estimateGifSeconds,
   estimateSize,
   exceedsLimit,
   formatBytes,
@@ -47,6 +48,22 @@ describe('平台预设表', () => {
     expect(getPreset('discord').gifLimitBytes).toBe(20 * 1024 * 1024);
     expect(getPreset('wechat').gifLimitBytes).toBe(2 * 1024 * 1024);
     expect(getPreset('xiaohongshu').gifLimitBytes).toBeNull();
+    expect(getPreset('reddit').gifLimitBytes).toBe(20 * 1024 * 1024);
+    expect(getPreset('instagram').gifLimitBytes).toBeNull();
+    expect(getPreset('tiktok').gifLimitBytes).toBeNull();
+  });
+
+  it('Instagram / TikTok / Reddit 带 2026 规格的推荐比例与格式', () => {
+    // Instagram 信息流竖图 4:5 → PNG；Stories / Reels 由用户手动切 9:16
+    expect(getPreset('instagram').ratio).toBe('4:5');
+    expect(getPreset('instagram').format).toBe('png');
+    // TikTok 图文 / 视频统一 9:16 → MP4
+    expect(getPreset('tiktok').ratio).toBe('9:16');
+    expect(getPreset('tiktok').format).toBe('mp4');
+    // Reddit 信息流竖图 4:5 → GIF 内联播放
+    expect(getPreset('reddit').ratio).toBe('4:5');
+    expect(getPreset('reddit').format).toBe('gif');
+    expect(canvasSize(base.template, '9:16')).toEqual({ w: 1080, h: 1920 });
   });
 
   it('每个平台都有中英文名与提示（UI 双语不漏字）', () => {
@@ -85,6 +102,31 @@ describe('deriveExportState', () => {
     const state = deriveExportState(base, 'wechat', 'gif');
     const ticker = state.template.layers.find((l): l is TickerLayer => l.type === 'ticker');
     expect(ticker?.iconScale).toBe(0.62);
+  });
+});
+
+describe('快速 GIF 档', () => {
+  it('降到 720px / 12fps，且只影响 GIF', () => {
+    const gif = deriveExportState(base, 'none', 'gif', true);
+    expect(canvasSize(gif.template, gif.ratio)).toEqual({ w: 720, h: 720 });
+    expect(gif.template.animation.fps).toBe(12);
+    // 快速档是 GIF 的体积手段，不该把 PNG 也降成 720px
+    expect(deriveExportState(base, 'none', 'png', true)).toBe(base);
+  });
+
+  it('与微信档同时选时取更小值（不会反而变大）', () => {
+    const both = deriveExportState(base, 'wechat', 'gif', true);
+    expect(canvasSize(both.template, both.ratio)).toEqual({ w: 720, h: 720 });
+    expect(both.template.animation.fps).toBe(12);
+  });
+
+  it('体积与预计耗时都随快速档下降', () => {
+    const standard = estimateGifBytes(base);
+    const quick = estimateSize(base, 'none', 'gif', true).bytes;
+    expect(quick).not.toBeNull();
+    expect(quick ?? Infinity).toBeLessThan(standard);
+    expect(estimateGifSeconds(base, 'none')).toBe(67);
+    expect(estimateGifSeconds(base, 'none', true)).toBeLessThan(67);
   });
 });
 

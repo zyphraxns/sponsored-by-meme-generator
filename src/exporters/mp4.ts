@@ -19,6 +19,7 @@ import type { VideoCodec } from 'mediabunny';
 import { canvasSize, loopSecondsFor, scene, sceneIconSvgs, sceneLogoSvgs, sceneTexts } from '../core/scene';
 import type { ExportProgress } from '../core/frames';
 import type { SceneState } from '../core/types';
+import { exportFilename } from './filename';
 import { rasterizeScene, rasterizeToCanvas } from './png';
 import { svgForRaster } from './fonts';
 
@@ -69,8 +70,10 @@ export async function exportMp4(
   onProgress?: ExportProgress,
   options: Mp4Options = {},
 ): Promise<Mp4Result> {
-  const { w, h } = canvasSize(state.template, state.ratio);
-  const loop = loopSecondsFor(state);
+  // 视频编码没有 alpha：透明底只服务 PNG / SVG，逐帧渲染前强制恢复背景色
+  const opaque: SceneState = state.transparentBg ? { ...state, transparentBg: false } : state;
+  const { w, h } = canvasSize(opaque.template, opaque.ratio);
+  const loop = loopSecondsFor(opaque);
   const fps = options.fps ?? MP4_FPS;
   const total = Math.max(1, Math.round(loop * fps));
 
@@ -103,13 +106,13 @@ export async function exportMp4(
 
   await output.start();
 
-  const texts = sceneTexts(state);
-  const iconSvgs = await sceneIconSvgs(state);
+  const texts = sceneTexts(opaque);
+  const iconSvgs = await sceneIconSvgs(opaque);
   // 官方完整字标（有则替代「符号 + 品牌名」）；变体按背景亮度挑，
   // 否则深底会拿到黑色字标直接消失
-  const bg = state.palette?.bg ?? state.template.palette.bg;
-  const { svgs: logoSvgs, aspect: logoAspect, ink: logoInk } = await sceneLogoSvgs(state, bg);
-  const enriched: SceneState = { ...state, iconSvgs, logoSvgs, logoAspect, logoInk };
+  const bg = opaque.palette?.bg ?? opaque.template.palette.bg;
+  const { svgs: logoSvgs, aspect: logoAspect, ink: logoInk } = await sceneLogoSvgs(opaque, bg);
+  const enriched: SceneState = { ...opaque, iconSvgs, logoSvgs, logoAspect, logoInk };
   for (let i = 0; i < total; i++) {
     const t = i / fps;
     const svg = await svgForRaster(scene(enriched, t), texts);
@@ -134,6 +137,5 @@ export async function exportMp4(
 }
 
 export function mp4Filename(state: SceneState): string {
-  const { w, h } = canvasSize(state.template, state.ratio);
-  return `${state.template.id}-${w}x${h}.mp4`;
+  return exportFilename(state, 'mp4');
 }

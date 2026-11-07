@@ -9,6 +9,7 @@
     "ratios": [
       "1:1",
       "4:5",
+      "9:16",
       "16:9"
     ],
     "basePx": 1080
@@ -40,6 +41,30 @@
         0.22
       ],
       "align": "center"
+    },
+    {
+      "type": "text",
+      "id": "subtitle",
+      "label": {
+        "en": "Handle",
+        "zh": "署名"
+      },
+      "default": {
+        "en": "@the-gang",
+        "zh": "@你的朋友"
+      },
+      "font": "display",
+      "fit": "auto-shrink",
+      "box": [
+        0.06,
+        0.33,
+        0.88,
+        0.05
+      ],
+      "align": "center",
+      "accent": false,
+      "weight": 700,
+      "letterSpacing": 0.04
     },
     {
       "type": "ticker",

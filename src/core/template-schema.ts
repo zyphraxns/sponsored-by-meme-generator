@@ -7,7 +7,7 @@
  *
  * 约定：校验通过返回强类型 Template；任何不满足抛 TemplateError（带路径）。
  */
-import type { Layer, Locale, Ratio, Template, TickerItem } from './types';
+import type { Layer, Locale, Ratio, Template, TextLayer, TickerItem } from './types';
 
 export class TemplateError extends Error {
   constructor(message: string) {
@@ -16,7 +16,7 @@ export class TemplateError extends Error {
   }
 }
 
-const RATIOS: Ratio[] = ['1:1', '4:5', '16:9'];
+const RATIOS: Ratio[] = ['1:1', '4:5', '9:16', '16:9'];
 const LOCALES: Locale[] = ['en', 'zh'];
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -82,7 +82,7 @@ function wantLayer(v: unknown, path: string): Layer {
     if (v.align !== undefined && v.align !== 'center') {
       fail(`${path}.align`, `仅支持 'center'，实际 ${JSON.stringify(v.align)}`);
     }
-    return {
+    const layer: TextLayer = {
       type: 'text',
       id: wantString(v.id, `${path}.id`, { min: 1 }),
       default: wantLocaleMap(v.default, `${path}.default`),
@@ -91,6 +91,17 @@ function wantLayer(v: unknown, path: string): Layer {
       box: wantBox(v.box, `${path}.box`),
       align: 'center',
     };
+    // 可选的表现层字段：只接受明确写出的值，缺省由渲染端 decide（标题 800 / 无字距 / 有强调线）
+    if (v.label !== undefined) layer.label = wantLocaleMap(v.label, `${path}.label`);
+    if (v.accent !== undefined) {
+      if (typeof v.accent !== 'boolean') fail(`${path}.accent`, '期望布尔值');
+      layer.accent = v.accent;
+    }
+    if (v.weight !== undefined) layer.weight = wantNumber(v.weight, `${path}.weight`, [100, 900]);
+    if (v.letterSpacing !== undefined) {
+      layer.letterSpacing = wantNumber(v.letterSpacing, `${path}.letterSpacing`, [-0.1, 0.5]);
+    }
+    return layer;
   }
   if (type === 'ticker') {
     const items = v.items;

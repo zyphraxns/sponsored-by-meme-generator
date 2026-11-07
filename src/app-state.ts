@@ -18,6 +18,8 @@ export interface DefaultStateOptions {
   logoWithSymbol?: boolean;
   /** 用户覆盖的速度倍率（须为有理数，保证 LCM 周期有限） */
   speed?: number;
+  /** 静态导出（PNG / SVG）是否使用透明背景 */
+  transparentBg?: boolean;
 }
 
 /**
@@ -40,5 +42,6 @@ export function createDefaultState(options: DefaultStateOptions = {}): SceneStat
     icons: options.icons ?? [],
     palette: options.palette ?? {},
     logoWithSymbol: options.logoWithSymbol ?? false,
+    transparentBg: options.transparentBg ?? false,
   };
 }

@@ -20,10 +20,16 @@ export function estimateTextWidth(text: string, fontSize: number): number {
   return em * fontSize * 1.04; // 粗体膨胀
 }
 
+/** 字号硬下限：再小就真的看不清了，此时靠 overflow 信号让调用方提示用户 */
+const MIN_FONT_SIZE = 8;
+
+/** 可读下限：最终字号低于文本盒高度的这个比例时，视为已经压到看不清 */
+export const MIN_READABLE_RATIO = 0.2;
+
 /** auto-shrink：不超过高度上限的前提下，逐级收缩到宽度上限内 */
 export function fitFontSize(text: string, boxW: number, boxH: number): number {
   let size = boxH;
-  while (size > 8 && estimateTextWidth(text, size) > boxW) size -= 1;
+  while (size > MIN_FONT_SIZE && estimateTextWidth(text, size) > boxW) size -= 1;
   return size;
 }
 
@@ -42,6 +48,27 @@ const WRAP_WIN_RATIO = 1.08;
 export interface TextLayout {
   lines: string[];
   fontSize: number;
+  /** 是否发生过自动收缩（fontSize 小于文本盒高度） */
+  compressed: boolean;
+  /** 压缩比例 = fontSize / boxH；1 表示完全没缩 */
+  scale: number;
+  /**
+   * 是否已经压到可读下限以下。
+   * 调用方拿到 true 时应提示「标题太长，建议删字或手动换行」，
+   * 而不是继续静默缩小字号。
+   */
+  overflow: boolean;
+}
+
+function makeLayout(lines: string[], fontSize: number, boxH: number): TextLayout {
+  const scale = boxH > 0 ? Math.min(1, fontSize / boxH) : 1;
+  return {
+    lines,
+    fontSize,
+    compressed: scale < 1,
+    scale,
+    overflow: scale < MIN_READABLE_RATIO,
+  };
 }
 
 /** 切成可单独断行的碎片：CJK 逐字，拉丁按词 */
@@ -131,12 +158,21 @@ function wrapToLines(text: string, maxLines: number, boxW: number, size: number)
  * 对字号做二分即可（折得越多行 → 字号越大 → 每行越窄，单调）。
  */
 export function fitTextLayout(text: string, boxW: number, boxH: number): TextLayout {
-  const cached = layoutCache.get(`${text}\u0000${boxW}\u0000${boxH}`);
+  const key = `${text}\u0000${boxW}\u0000${boxH}`;
+  const cached = layoutCache.get(key);
   if (cached) return cached;
 
-  const single: TextLayout = { lines: [text], fontSize: fitFontSize(text, boxW, boxH) };
+  // 用户输入的换行符（\n / \r\n）是硬断点；没有换行时走原来的纯自动折行逻辑，
+  // 保证现有模板的排版结果一个字都不变。
+  const layout = /[\r\n]/.test(text) ? fitWithHardBreaks(text, boxW, boxH) : fitAuto(text, boxW, boxH);
+  remember(key, layout);
+  return layout;
+}
+
+/** 纯自动折行（无手动换行时的原有逻辑） */
+function fitAuto(text: string, boxW: number, boxH: number): TextLayout {
+  const single = makeLayout([text], fitFontSize(text, boxW, boxH), boxH);
   if (text.trim() === '' || single.fontSize >= boxH * GOOD_ENOUGH_RATIO) {
-    remember(text, boxW, boxH, single);
     return single;
   }
 
@@ -148,11 +184,65 @@ export function fitTextLayout(text: string, boxW: number, boxH: number): TextLay
     const size = bestWrapSize(text, n, boxW, boxH, floor);
     if (size === null) continue;
     if (!best || size > best.fontSize) {
-      best = { lines: wrapToLines(text, n, boxW, size) ?? [text], fontSize: size };
+      best = makeLayout(wrapToLines(text, n, boxW, size) ?? [text], size, boxH);
     }
   }
-  const out = best ?? single;
-  remember(text, boxW, boxH, out);
+  return best ?? single;
+}
+
+/**
+ * 手动换行模式：每个 `\n` 都是硬断点，片段内部继续自动折行。
+ *
+ * 字号取「所有行都能装进文本框」的最大值；行数由用户决定，不再套用 3 行上限。
+ * 如果压到字号下限都装不下，仍然返回全部行（不偷偷丢内容），
+ * 同时把 overflow 标成 true，交给调用方提示用户删字。
+ */
+function fitWithHardBreaks(text: string, boxW: number, boxH: number): TextLayout {
+  const segments = text.replace(/\r\n?/g, '\n').split('\n');
+  // 输入框末尾常带一个换行，别把它当成额外的空白行
+  while (segments.length > 1 && (segments[segments.length - 1] ?? '').trim() === '') segments.pop();
+
+  // 最少行数就是硬断点数量，据此算出字号的理论上限
+  const ceiling = boxH / (Math.max(1, segments.length) * LINE_HEIGHT_RATIO);
+  const top = Math.max(1, ceiling);
+
+  const fits = (size: number): boolean => {
+    const lines = wrapSegments(segments, boxW, size);
+    return lines.length * size * LINE_HEIGHT_RATIO <= boxH;
+  };
+
+  if (ceiling <= MIN_FONT_SIZE) {
+    // 文本框本身很矮（缩略图等），先保证高度，可读性交给 overflow 信号
+    return makeLayout(wrapSegments(segments, boxW, top), top, boxH);
+  }
+
+  if (!fits(ceiling)) {
+    if (!fits(MIN_FONT_SIZE)) {
+      return makeLayout(wrapSegments(segments, boxW, MIN_FONT_SIZE), MIN_FONT_SIZE, boxH);
+    }
+    let lo = MIN_FONT_SIZE;
+    let hi = ceiling;
+    for (let i = 0; i < 14; i++) {
+      const mid = (lo + hi) / 2;
+      if (fits(mid)) lo = mid;
+      else hi = mid;
+    }
+    return makeLayout(wrapSegments(segments, boxW, lo), lo, boxH);
+  }
+  return makeLayout(wrapSegments(segments, boxW, ceiling), ceiling, boxH);
+}
+
+/** 每个硬断片段内部继续贪心折行，并按顺序拼成最终行列表 */
+function wrapSegments(segments: string[], boxW: number, size: number): string[] {
+  const out: string[] = [];
+  for (const segment of segments) {
+    if (segment.trim() === '') {
+      out.push(''); // 连续两个换行 = 用户想要的空行
+      continue;
+    }
+    const wrapped = wrapToLines(segment, Number.MAX_SAFE_INTEGER, boxW, size);
+    out.push(...(wrapped ?? [segment]));
+  }
   return out;
 }
 
@@ -181,8 +271,8 @@ function bestWrapSize(text: string, n: number, boxW: number, boxH: number, floor
  * 几十次折行计算。只留最近 8 条（通常是同一个标题在重复问）。
  */
 const layoutCache = new Map<string, TextLayout>();
-function remember(text: string, boxW: number, boxH: number, layout: TextLayout): void {
-  layoutCache.set(`${text}\u0000${boxW}\u0000${boxH}`, layout);
+function remember(key: string, layout: TextLayout): void {
+  layoutCache.set(key, layout);
   if (layoutCache.size > 8) {
     const oldest = layoutCache.keys().next().value;
     if (oldest !== undefined) layoutCache.delete(oldest);

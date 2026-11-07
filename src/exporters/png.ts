@@ -96,6 +96,21 @@ function inkRatio(
   return ink / (region.length / 4);
 }
 
+/** 透明底时的墨迹判定：背景像素 alpha=0，有字形的像素 alpha>0 */
+function alphaInkRatio(
+  canvas: HTMLCanvasElement,
+  box: { x: number; y: number; w: number; h: number },
+): number {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return 1;
+  const region = ctx.getImageData(box.x, box.y, Math.max(1, box.w), Math.max(1, box.h)).data;
+  let ink = 0;
+  for (let i = 3; i < region.length; i += 4) {
+    if ((region[i] ?? 0) > 8) ink++;
+  }
+  return ink / (region.length / 4);
+}
+
 /**
  * 主文本图层的「墨迹占比」：文本盒内与背景不同的像素比例。
  * 导出前的字体竞态校验与导出自检页都以此判定「文字真的画出来了」。
@@ -103,6 +118,8 @@ function inkRatio(
 export function textInkRatio(canvas: HTMLCanvasElement, state: SceneState): number {
   const box = primaryTextBox(state, canvas.width, canvas.height);
   if (!box) return 1; // 模板无文本图层 → 无从判定，放行
+  // 透明底没有「背景色」可比：直接数不透明像素（空白区域 alpha=0）
+  if (state.transparentBg) return alphaInkRatio(canvas, box);
   const bg = parseHex(state.palette?.bg ?? state.template.palette.bg);
   return inkRatio(canvas, box, bg);
 }

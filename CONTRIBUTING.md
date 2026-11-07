@@ -28,15 +28,23 @@ Node.js ≥ 20. There is no `.env`, no database, no service to start.
 | `npm run dev` | Vite dev server with HMR |
 | `npm run build` | Static build into `dist/` |
 | `npm run typecheck` | `tsc --noEmit` (strict + `noUncheckedIndexedAccess`) |
-| `npm test` | Vitest, 113 tests |
+| `npm run lint` | Biome lint over `src/`, `scripts/`, `tests/` (also runs in CI) |
+| `npm run lint:fix` | Biome lint with safe auto-fixes |
+| `npm run format` | Biome formatter (writes changes) |
+| `npm run format:check` | Biome formatter in check-only mode |
+| `npm test` | Vitest, 219 tests |
 | `npm run fonts:slices` | Regenerate the Noto Sans SC slices in `public/fonts/` from the installed `@fontsource/noto-sans-sc` package |
 | `npm run fonts:b64` | Regenerate the Inter base64 sidecar |
 
-Before opening a PR, all three must be green:
+Before opening a PR, all four must be green:
 
 ```bash
-npm run typecheck && npm test && npm run build
+npm run typecheck && npm run lint && npm test && npm run build
 ```
+
+`npm run format:check` is advisory for now: the existing tree has not had a
+formatter pass yet, so it reports drift on legacy files. Run `npm run format`
+on files you touch, or wait for the dedicated format-only commit.
 
 ## Verification tooling
 

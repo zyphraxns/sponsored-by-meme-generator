@@ -1,5 +1,5 @@
 import type { SceneState, SvgInkBox, Template, TextLayer, TickerLayer, TickerItem } from './types';
-import { fitTextLayout, LINE_HEIGHT_RATIO } from './layout';
+import { estimateTextWidth, fitTextLayout, LINE_HEIGHT_RATIO } from './layout';
 import { loopDuration, tickerPositions } from './ticker';
 import type { TickerSlot } from './ticker';
 import { isEmoji, isSimpleIcons, isSvglIcon, isUpload } from './simple-icons';
@@ -58,6 +58,40 @@ export function escapeXml(s: string): string {
 /** 数值属性统一保留 2 位小数：输出干净且确定性（纯函数要求） */
 function f(v: number): string {
   return (Math.round(v * 100) / 100).toString();
+}
+
+function hexRgb(hex: string): [number, number, number] | null {
+  const match = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
+  if (!match) return null;
+  const raw = match[1] as string;
+  const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw;
+  return [
+    parseInt(full.slice(0, 2), 16),
+    parseInt(full.slice(2, 4), 16),
+    parseInt(full.slice(4, 6), 16),
+  ];
+}
+
+function channelLuminance(value: number): number {
+  const s = value / 255;
+  return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+}
+
+function contrastRatio(a: string, b: string): number {
+  const ca = hexRgb(a);
+  const cb = hexRgb(b);
+  if (!ca || !cb) return 0;
+  const la = 0.2126 * channelLuminance(ca[0]) + 0.7152 * channelLuminance(ca[1]) + 0.0722 * channelLuminance(ca[2]);
+  const lb = 0.2126 * channelLuminance(cb[0]) + 0.7152 * channelLuminance(cb[1]) + 0.0722 * channelLuminance(cb[2]);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/**
+ * accent 是画在背景上的装饰线，不是正文：只要和背景的对比度 ≥ 3:1 就可见。
+ * 用户在取色器里选到接近背景的 accent 时退回前景色，避免「选了但看不见」。
+ */
+function visibleAccent(accent: string, bg: string, fg: string): string {
+  return contrastRatio(accent, bg) >= 3 ? accent : fg;
 }
 
 export function canvasSize(template: Template, ratio: SceneState['ratio']): { w: number; h: number } {
@@ -221,17 +255,22 @@ export function scene(state: SceneState, t: number): string {
   const { w, h } = canvasSize(template, state.ratio);
   const bg = state.palette?.bg ?? template.palette.bg;
   const fg = state.palette?.fg ?? template.palette.fg;
+  // 模板 / 主题里的 accent 真正参与渲染：作为标题下方的一条强调线。
+  const accent = visibleAccent(state.palette?.accent ?? template.palette.accent, bg, fg);
   const loop = loopSecondsFor(state);
 
   const out: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${f(w)} ${f(h)}" width="${f(w)}" height="${f(h)}" role="img" aria-label="${escapeXml(template.name[state.locale])}">`,
     `<title>${escapeXml(template.name[state.locale])}</title>`,
-    `<rect x="0" y="0" width="${f(w)}" height="${f(h)}" fill="${bg}"/>`,
   ];
+  // 透明底：PNG / SVG 需要叠到视频或照片上时不留白底。GIF / MP4 在导出器内部强制关掉。
+  if (!state.transparentBg) {
+    out.push(`<rect x="0" y="0" width="${f(w)}" height="${f(h)}" fill="${bg}"/>`);
+  }
 
   for (const layer of template.layers) {
     if (layer.type === 'text') {
-      out.push(renderText(layer, state, w, h, fg));
+      out.push(renderText(layer, state, w, h, fg, accent));
     } else {
       out.push(renderTicker(layer, state, w, h, loop, t, fg));
     }
@@ -240,29 +279,58 @@ export function scene(state: SceneState, t: number): string {
   return out.join('\n');
 }
 
-function renderText(layer: TextLayer, state: SceneState, w: number, h: number, fg: string): string {
+function renderText(
+  layer: TextLayer,
+  state: SceneState,
+  w: number,
+  h: number,
+  fg: string,
+  accent: string,
+): string {
   const text = state.text[layer.id]?.[state.locale] ?? layer.default[state.locale];
   const [bx, by, bw, bh] = layer.box;
   const layout = fitTextLayout(text, bw * w, bh * h * 0.92);
   const cx = (bx + bw / 2) * w;
   const cy = (by + bh / 2) * h;
+  const tracking = layer.letterSpacing
+    ? ` letter-spacing="${f(layer.letterSpacing * layout.fontSize)}"`
+    : '';
   const attrs =
-    `font-family='${DISPLAY_FONT}' font-size="${f(layout.fontSize)}" font-weight="800" fill="${fg}" text-anchor="middle"`;
+    `font-family='${DISPLAY_FONT}' font-size="${f(layout.fontSize)}" font-weight="${layer.weight ?? 800}" fill="${fg}" text-anchor="middle"${tracking}`;
+  const lh = layout.fontSize * LINE_HEIGHT_RATIO;
+
+  let body: string;
+  let bottom: number;
   // 单行：保持最朴素的 <text>（导出到任何查看器都一样）
   if (layout.lines.length <= 1) {
     // 手算基线（不用 dominant-baseline）：导出 SVG 在任何查看器里表现一致
-    return `<text x="${f(cx)}" y="${f(cy + layout.fontSize * 0.35)}" ${attrs}>${escapeXml(text)}</text>`;
+    const baseline = cy + layout.fontSize * 0.35;
+    body = `<text x="${f(cx)}" y="${f(baseline)}" ${attrs}>${escapeXml(text)}</text>`;
+    bottom = baseline + layout.fontSize * 0.18;
+  } else {
+    // 多行：整块垂直居中，逐行 <tspan>。行高与字号同源，改字号不会错位。
+    const top = cy - (layout.lines.length * lh) / 2;
+    const spans = layout.lines
+      .map(
+        (line, i) =>
+          `<tspan x="${f(cx)}" y="${f(top + (i + 0.5) * lh + layout.fontSize * 0.35)}">${escapeXml(line)}</tspan>`,
+      )
+      .join('');
+    body = `<text ${attrs}>${spans}</text>`;
+    bottom = top + (layout.lines.length - 1 + 0.5) * lh + layout.fontSize * 0.53;
   }
-  // 多行：整块垂直居中，逐行 <tspan>。行高与字号同源，改字号不会错位。
-  const lh = layout.fontSize * LINE_HEIGHT_RATIO;
-  const top = cy - (layout.lines.length * lh) / 2;
-  const spans = layout.lines
-    .map(
-      (line, i) =>
-        `<tspan x="${f(cx)}" y="${f(top + (i + 0.5) * lh + layout.fontSize * 0.35)}">${escapeXml(line)}</tspan>`,
-    )
-    .join('');
-  return `<text ${attrs}>${spans}</text>`;
+
+  // accent 用于标题下方的强调线：长度跟着最长一行走，短标题不会拖一条长线，
+  // 长标题也不会超出安全区。空标题不画线，避免留下一根“悬浮”的装饰。
+  // 副标题层（accent: false）不画线，否则每条文字下面都挂一根杠。
+  if (layer.accent === false || text.trim() === '') return body;
+  const textW = Math.max(...layout.lines.map((line) => estimateTextWidth(line, layout.fontSize)));
+  const barH = Math.max(3, layout.fontSize * 0.055);
+  const barW = Math.min(bw * w * 0.86, Math.max(16, textW));
+  const barY = Math.min(by * h + bh * h - barH, bottom + layout.fontSize * 0.06);
+  const bar =
+    `<rect x="${f(cx - barW / 2)}" y="${f(barY)}" width="${f(barW)}" height="${f(barH)}" rx="${f(barH / 2)}" fill="${accent}"/>`;
+  return body + bar;
 }
 
 function renderTicker(

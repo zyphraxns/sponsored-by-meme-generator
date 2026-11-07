@@ -1,7 +1,7 @@
 import type { PatchOp } from './json-patch';
 
-/** 画布比例档位：1:1 → X·Discord·微信 / 4:5 → 小红书 / 16:9 → 视频封面 */
-export type Ratio = '1:1' | '4:5' | '16:9';
+/** 画布比例档位：1:1 → X·Discord·微信 / 4:5 → Instagram·小红书 / 9:16 → TikTok·Reels / 16:9 → 视频封面 */
+export type Ratio = '1:1' | '4:5' | '9:16' | '16:9';
 export type Locale = 'en' | 'zh';
 
 /** 图标来源：M0 仅 emoji；simple-icons / 用户上传见后续里程碑 */
@@ -28,6 +28,14 @@ export interface TextLayer {
   /** [x, y, w, h]，均为相对画布的 0..1 比例 */
   box: [number, number, number, number];
   align: 'center';
+  /** 界面输入框的显示名；缺省时按层 id 取「标题 / 副标题」 */
+  label?: Record<Locale, string>;
+  /** 是否在文字下方画强调线；默认 true（副标题层通常设为 false） */
+  accent?: boolean;
+  /** 字重，默认 800 */
+  weight?: number;
+  /** 字距（em），默认 0 */
+  letterSpacing?: number;
 }
 
 export interface TickerLayer {
@@ -124,4 +132,9 @@ export interface SceneState {
    * path 数可靠区分（实测 2.23/2.71/3.12 与 6/2/16 都无规律），所以交给用户决定。
    */
   logoWithSymbol?: boolean;
+  /**
+   * 导出 PNG / SVG 时不要背景色（透明底）。
+   * GIF / MP4 必须不透明（视频编码没有 alpha），导出器会在内部强制关掉。
+   */
+  transparentBg?: boolean;
 }

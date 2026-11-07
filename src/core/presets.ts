@@ -13,11 +13,20 @@
  */
 import { canvasSize, DEFAULT_ICON_SCALE, loopSecondsFor } from './scene';
 import { frameCount } from './frames';
-import type { Locale, SceneState, TickerLayer } from './types';
+import type { Locale, Ratio, SceneState, TickerLayer } from './types';
 
 const MIB = 1024 * 1024;
 
-export type PlatformId = 'none' | 'x' | 'github' | 'discord' | 'wechat' | 'xiaohongshu';
+export type PlatformId =
+  | 'none'
+  | 'x'
+  | 'instagram'
+  | 'tiktok'
+  | 'reddit'
+  | 'github'
+  | 'discord'
+  | 'wechat'
+  | 'xiaohongshu';
 export type ExportFormat = 'gif' | 'mp4' | 'png' | 'svg';
 
 /** 派生档位：只写要覆盖的字段，未写的沿用模板值 */
@@ -31,6 +40,10 @@ export interface PresetOverrides {
 export interface PlatformPreset {
   id: PlatformId;
   name: Record<Locale, string>;
+  /** 该平台推荐的画布比例；选中平台时自动套用（用户可随后手动改） */
+  ratio?: Ratio;
+  /** 该平台推荐的导出格式；界面会高亮对应按钮 */
+  format: ExportFormat;
   /** GIF 体积上限（字节）；null = 该平台不适用 GIF 或口径未知 */
   gifLimitBytes: number | null;
   mp4LimitBytes: number | null;
@@ -44,6 +57,7 @@ export const PLATFORMS: PlatformPreset[] = [
   {
     id: 'none',
     name: { en: 'No preset', zh: '不预设' },
+    format: 'gif',
     gifLimitBytes: null,
     mp4LimitBytes: null,
     note: { en: 'Template defaults.', zh: '按模板默认参数导出。' },
@@ -51,6 +65,7 @@ export const PLATFORMS: PlatformPreset[] = [
   {
     id: 'x',
     name: { en: 'X / Twitter', zh: 'X / 推特' },
+    format: 'gif',
     // 网页 15 MB / App 5 MB，取 App 的保守口径
     gifLimitBytes: 5 * MIB,
     mp4LimitBytes: 512 * MIB,
@@ -60,8 +75,50 @@ export const PLATFORMS: PlatformPreset[] = [
     },
   },
   {
+    // 2026 规格：信息流竖图 1080×1350（4:5）；Stories / Reels 1080×1920（9:16）。
+    // 预设按信息流给 4:5，需要发 Stories / Reels 时手动切 9:16。
+    id: 'instagram',
+    name: { en: 'Instagram', zh: 'Instagram' },
+    ratio: '4:5',
+    format: 'png',
+    // 信息流不接受动图：GIF 会被转成静帧或直接拒收，故不承诺 GIF 口径
+    gifLimitBytes: null,
+    mp4LimitBytes: null,
+    note: {
+      en: 'Feed portraits are 1080×1350 (4:5); Stories and Reels are 1080×1920 (9:16) — switch the ratio for those.',
+      zh: '信息流竖图 1080×1350（4:5）；Stories / Reels 是 1080×1920（9:16），发这两处请切到 9:16。',
+    },
+  },
+  {
+    // 2026 规格：图文与视频统一 1080×1920（9:16），原生上传格式为 MP4
+    id: 'tiktok',
+    name: { en: 'TikTok', zh: 'TikTok' },
+    ratio: '9:16',
+    format: 'mp4',
+    gifLimitBytes: null,
+    mp4LimitBytes: null,
+    note: {
+      en: 'Photos and video are 1080×1920 (9:16); MP4 is the native upload format.',
+      zh: '图文和视频都是 1080×1920（9:16）；MP4 是原生上传格式。',
+    },
+  },
+  {
+    // Reddit 官方帮助给的是图片单文件上限 ~20 MB；信息流竖图常用 4:5
+    id: 'reddit',
+    name: { en: 'Reddit', zh: 'Reddit' },
+    ratio: '4:5',
+    format: 'gif',
+    gifLimitBytes: 20 * MIB,
+    mp4LimitBytes: null,
+    note: {
+      en: 'Images cap at 20 MB; GIFs play inline (Reddit may transcode them to video).',
+      zh: '图片上限 20 MB；GIF 内联播放（Reddit 可能自动转成视频）。',
+    },
+  },
+  {
     id: 'github',
     name: { en: 'GitHub', zh: 'GitHub' },
+    format: 'gif',
     gifLimitBytes: 10 * MIB,
     mp4LimitBytes: null,
     note: {
@@ -72,6 +129,7 @@ export const PLATFORMS: PlatformPreset[] = [
   {
     id: 'discord',
     name: { en: 'Discord', zh: 'Discord' },
+    format: 'gif',
     gifLimitBytes: 20 * MIB,
     mp4LimitBytes: null,
     note: {
@@ -82,6 +140,7 @@ export const PLATFORMS: PlatformPreset[] = [
   {
     id: 'wechat',
     name: { en: 'WeChat (safe)', zh: '微信（安全档）' },
+    format: 'gif',
     // 官方口径 10 MB，但实测 > 1~2 MB 会静默降级成静态图 → 取 2 MB 为实用线
     gifLimitBytes: 2 * MIB,
     mp4LimitBytes: null,
@@ -95,6 +154,7 @@ export const PLATFORMS: PlatformPreset[] = [
   {
     id: 'xiaohongshu',
     name: { en: 'Xiaohongshu', zh: '小红书' },
+    format: 'mp4',
     gifLimitBytes: null,
     mp4LimitBytes: null,
     note: {
@@ -110,23 +170,34 @@ export function getPreset(id: PlatformId): PlatformPreset {
   return preset;
 }
 
+/** 快速 GIF 档：720p / 12fps（与微信安全档同量级；只作用于 GIF） */
+const QUICK_GIF: PresetOverrides = { basePx: 720, fps: 12 };
+
 /**
  * 按「平台 + 导出格式」派生一份导出专用状态。
  *
  * 预览与 PNG/SVG 用原始状态（保持模板自然像素）；只有 GIF 吃平台档位。
  * MP4 暂不降档——编码器效率比 GIF 高一个量级，1080p 也远在限额内。
+ *
+ * quickGif 是用户可选的「快速档」：与平台档位取更小值（更小画布 / 更低帧率），
+ * 不会出现「选了微信档反而变大」的怪事。不选时行为与旧版完全一致。
  */
 export function deriveExportState(
   state: SceneState,
   presetId: PlatformId,
   format: ExportFormat,
+  quickGif = false,
 ): SceneState {
-  const over = format === 'gif' ? getPreset(presetId).gif : undefined;
-  if (!over) return state;
+  const preset = getPreset(presetId);
+  const over = format === 'gif' ? preset.gif : undefined;
+  const quick = format === 'gif' && quickGif ? QUICK_GIF : undefined;
+  if (!over && !quick) return state;
 
   const { template } = state;
+  const basePxCaps = [over?.basePx, quick?.basePx].filter((v): v is number => v !== undefined);
+  const fpsCaps = [over?.fps, quick?.fps].filter((v): v is number => v !== undefined);
   const layers =
-    over.iconScale === undefined
+    over?.iconScale === undefined
       ? template.layers
       : template.layers.map((l): TickerLayer | typeof l =>
           l.type === 'ticker' ? { ...l, iconScale: over.iconScale } : l,
@@ -136,9 +207,19 @@ export function deriveExportState(
     ...state,
     template: {
       ...template,
-      canvas: { ...template.canvas, basePx: over.basePx ?? template.canvas.basePx },
-      animation: { ...template.animation, fps: over.fps ?? template.animation.fps },
-      export: { ...template.export, gifMaxColors: over.maxColors ?? template.export.gifMaxColors },
+      canvas: {
+        ...template.canvas,
+        basePx: basePxCaps.length > 0
+          ? Math.min(template.canvas.basePx, ...basePxCaps)
+          : template.canvas.basePx,
+      },
+      animation: {
+        ...template.animation,
+        fps: fpsCaps.length > 0
+          ? Math.min(template.animation.fps, ...fpsCaps)
+          : template.animation.fps,
+      },
+      export: { ...template.export, gifMaxColors: over?.maxColors ?? template.export.gifMaxColors },
       layers,
     },
   };
@@ -234,16 +315,35 @@ export function estimateSize(
   state: SceneState,
   presetId: PlatformId,
   format: ExportFormat,
+  quickGif = false,
 ): SizeEstimate {
   const preset = getPreset(presetId);
   if (format === 'gif') {
-    const bytes = estimateGifBytes(deriveExportState(state, presetId, 'gif'));
+    const bytes = estimateGifBytes(deriveExportState(state, presetId, 'gif', quickGif));
     return { bytes, limit: preset.gifLimitBytes, over: preset.gifLimitBytes !== null && bytes > preset.gifLimitBytes };
   }
   if (format === 'mp4') {
     return { bytes: null, limit: preset.mp4LimitBytes, over: false };
   }
   return { bytes: null, limit: null, over: false };
+}
+
+/**
+ * GIF 预计耗时（秒）。
+ *
+ * 锚点：2026-11-01 实测 1080² / 67 帧约 67 秒 → 每帧约 1 秒；小画布按像素面积
+ * 近似线性下降（720² 实测档约 22 秒）。只作导出前的时间预期，真实耗时随设备浮动。
+ */
+export function estimateGifSeconds(
+  state: SceneState,
+  presetId: PlatformId,
+  quickGif = false,
+): number {
+  const derived = deriveExportState(state, presetId, 'gif', quickGif);
+  const { w, h } = canvasSize(derived.template, derived.ratio);
+  const frames = frameCount(derived.template.animation.fps, loopSecondsFor(derived));
+  const area = (w * h) / (GIF_ANCHOR.px * GIF_ANCHOR.px);
+  return Math.max(1, Math.round(frames * area));
 }
 
 /** 人类可读体积：>= 1 MB 用 MB（一位小数），否则用 KB */

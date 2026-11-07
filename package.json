@@ -30,11 +30,16 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
     "fonts:b64": "node -e \"const fs=require('fs');const f='src/assets/fonts/inter-latin-800-normal.woff2';fs.writeFileSync(f+'.b64',fs.readFileSync(f).toString('base64'))\"",
     "fonts:slices": "node scripts/build-font-slices.mjs",
     "og": "node scripts/build-og.mjs"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.6.6",
     "@fontsource/inter": "^5.3.0",
     "@fontsource/noto-sans-sc": "^5.3.1",
     "typescript": "^5.9.3",

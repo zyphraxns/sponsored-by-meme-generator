@@ -1,5 +1,6 @@
-import { canvasSize, scene, sceneIconSvgs, sceneLogoSvgs, sceneTexts } from '../core/scene';
+import { scene, sceneIconSvgs, sceneLogoSvgs, sceneTexts } from '../core/scene';
 import type { SceneState } from '../core/types';
+import { exportFilename } from './filename';
 import { svgForFile } from './fonts';
 
 export const SVG_XML_DECL = '<?xml version="1.0" encoding="UTF-8"?>';
@@ -20,11 +21,9 @@ export function svgToBlob(svg: string): Blob {
 }
 
 export function pngFilename(state: SceneState): string {
-  const { w, h } = canvasSize(state.template, state.ratio);
-  return `${state.template.id}-${w}x${h}.png`;
+  return exportFilename(state, 'png');
 }
 
 export function svgFilename(state: SceneState): string {
-  const { w, h } = canvasSize(state.template, state.ratio);
-  return `${state.template.id}-${w}x${h}.svg`;
+  return exportFilename(state, 'svg');
 }
